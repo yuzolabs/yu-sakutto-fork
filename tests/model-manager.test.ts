@@ -1,0 +1,1040 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  INTEGRITY_DIGEST_ERROR,
+  INTEGRITY_REVISION_ERROR,
+  INTEGRITY_SIZE_ERROR,
+  isModelIntegrityError,
+  ModelManager,
+} from '@/engine/model/manager';
+import { sha256Hex, type HashOptions } from '@/engine/model/sha256';
+import type { ModelId } from '@/engine/model/catalog';
+import type { BackendSelection } from '@/engine/in-browser/backend';
+import type { ModelStatus } from '@/shared/engine-status';
+import { bytesOf, FakeRuntime, MemoryFileStore, entryRecord, makeEntry } from './support/fakes';
+import { deferred, flushTasks } from './support/ports';
+
+const PAYLOAD = bytesOf('hello world!');
+
+const ENTRY = makeEntry({
+  size: PAYLOAD.length,
+  sha256: sha256Hex(PAYLOAD),
+  url: 'https://example.test/model.gguf',
+});
+
+const SELECTION: BackendSelection = {
+  tier: 'c8',
+  backend: 'cpu-wasm',
+  nGpuLayers: 0,
+  nThreads: 8,
+  nParallel: 1,
+  nCtx: 2048,
+};
+
+function createManager(
+  store: MemoryFileStore,
+  options: {
+    createRuntime?: (blob: Blob, selection: BackendSelection) => Promise<FakeRuntime>;
+    fetchImpl?: typeof fetch;
+    fallbackStore?: MemoryFileStore;
+    copyChunkBytes?: number;
+    stallTimeoutMs?: number;
+    hashBlob?: (blob: Blob, options?: HashOptions) => Promise<string>;
+    downloadPartPaths?: Map<ModelId, string>;
+  } = {},
+): { manager: ModelManager; createRuntime: ReturnType<typeof vi.fn> } {
+  const createRuntime = vi.fn(
+    options.createRuntime ?? (async () => new FakeRuntime(() => 'こんにちは')),
+  );
+  const manager = new ModelManager({
+    store,
+    entries: entryRecord(ENTRY),
+    createRuntime,
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.fallbackStore ? { fallbackStore: options.fallbackStore } : {}),
+    ...(options.copyChunkBytes !== undefined ? { copyChunkBytes: options.copyChunkBytes } : {}),
+    ...(options.stallTimeoutMs !== undefined ? { stallTimeoutMs: options.stallTimeoutMs } : {}),
+    ...(options.hashBlob ? { hashBlob: options.hashBlob } : {}),
+    ...(options.downloadPartPaths ? { downloadPartPaths: options.downloadPartPaths } : {}),
+  });
+  return { manager, createRuntime };
+}
+
+async function seedVerified(store: MemoryFileStore): Promise<void> {
+  const { manager } = createManager(store, {
+    fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+  });
+  await manager.download(ENTRY.id, { signal: new AbortController().signal });
+}
+
+async function downloadedManager(): Promise<{
+  manager: ModelManager;
+  store: MemoryFileStore;
+  createRuntime: ReturnType<typeof vi.fn>;
+}> {
+  const store = new MemoryFileStore();
+  const { manager, createRuntime } = createManager(store, {
+    fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+  });
+  await manager.download(ENTRY.id, { signal: new AbortController().signal });
+  return { manager, store, createRuntime };
+}
+
+describe('ModelManager', () => {
+  it('reports an absent model, then ready after a verified download', async () => {
+    const store = new MemoryFileStore();
+    const { manager } = createManager(store, {
+      fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+    });
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'absent', progress: 0 });
+
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({
+      state: 'ready',
+      received: PAYLOAD.length,
+      total: PAYLOAD.length,
+      progress: 1,
+    });
+    expect(store.text(`models/${ENTRY.id}/model.json`)).toContain(ENTRY.sha256);
+    expect(store.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('starts a fresh download after real cancel and immediate resume', async () => {
+    const store = new MemoryFileStore();
+    const firstStarted = deferred<void>();
+    const firstCleanup = deferred<void>();
+    const secondStarted = deferred<void>();
+    const secondResponse = deferred<Response>();
+    let calls = 0;
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1;
+      if (calls === 1) {
+        firstStarted.resolve();
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            void firstCleanup.promise.then(() => {
+              reject(new DOMException('Aborted', 'AbortError'));
+            });
+          });
+        });
+      }
+      secondStarted.resolve();
+      return secondResponse.promise;
+    });
+    const { manager } = createManager(store, { fetchImpl });
+    const first = manager.download(ENTRY.id, { signal: new AbortController().signal });
+    await firstStarted.promise;
+
+    manager.cancel(ENTRY.id);
+    const resumed = manager.download(ENTRY.id, { signal: new AbortController().signal });
+    await flushTasks();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+
+    const firstRejection = expect(first).rejects.toMatchObject({ code: 'aborted' });
+    firstCleanup.resolve();
+    await firstRejection;
+    await secondStarted.promise;
+
+    // A third caller de-dupes onto the live replacement, not the cleaned-up aborted entry.
+    const attached = manager.download(ENTRY.id, { signal: new AbortController().signal });
+    await flushTasks();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    secondResponse.resolve(new Response(new Uint8Array(PAYLOAD), { status: 200 }));
+    await resumed;
+    await attached;
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+  });
+
+  it('cancels standalone verification started by status inspection', async () => {
+    const store = new MemoryFileStore();
+    await store.append(`models/${ENTRY.id}/model.gguf`, PAYLOAD, 0);
+    const hashStarted = deferred<AbortSignal>();
+    const hashBlob = vi.fn((_blob: Blob, options?: HashOptions) => {
+      if (hashBlob.mock.calls.length > 1) return Promise.resolve(ENTRY.sha256);
+      return new Promise<string>((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) throw new Error('missing verification signal');
+        hashStarted.resolve(signal);
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    });
+    const { manager } = createManager(store, { hashBlob });
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'verifying' });
+    const signal = await hashStarted.promise;
+    manager.cancel(ENTRY.id);
+    expect(signal.aborted).toBe(true);
+
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+    expect(hashBlob).toHaveBeenCalledTimes(2);
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+  });
+
+  it('keeps an HTTP 403 on the model status', async () => {
+    const store = new MemoryFileStore();
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 403 }));
+    const { manager } = createManager(store, { fetchImpl });
+
+    await expect(
+      manager.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toThrow(/HTTP 403/);
+    expect(await manager.status(ENTRY.id)).toMatchObject({
+      state: 'error',
+      error: expect.stringContaining('HTTP 403'),
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('reports progress from a tracked partial file and refuses to start without space', async () => {
+    const store = new MemoryFileStore();
+    const partPath = `models/${ENTRY.id}/model.local.part`;
+    await store.append(partPath, PAYLOAD.slice(0, 5), 0);
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }));
+    const { manager } = createManager(store, {
+      fetchImpl,
+      downloadPartPaths: new Map([[ENTRY.id, partPath]]),
+    });
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({
+      state: 'partial',
+      received: 5,
+      progress: 5 / PAYLOAD.length,
+    });
+
+    store.quota = 10;
+    await expect(
+      manager.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'storage-insufficient' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('does not report a foreign canonical part as our partial', async () => {
+    const store = new MemoryFileStore();
+    await store.append(`models/${ENTRY.id}/model.gguf.part`, PAYLOAD.slice(0, 5), 0);
+    const { manager } = createManager(store);
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({
+      state: 'absent',
+      received: 0,
+      progress: 0,
+    });
+  });
+
+  it('runs parallel downloads through separate part files and reuses the winner', async () => {
+    const store = new MemoryFileStore();
+    const firstParts = new Map<ModelId, string>();
+    const secondParts = new Map<ModelId, string>();
+    let started = 0;
+    let releaseBoth!: () => void;
+    const bothStarted = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    const fetchImpl = vi.fn(async () => {
+      started += 1;
+      if (started === 2) releaseBoth();
+      await bothStarted;
+      return new Response(new Uint8Array(PAYLOAD), { status: 200 });
+    });
+    const first = createManager(store, { fetchImpl, downloadPartPaths: firstParts }).manager;
+    const second = createManager(store, { fetchImpl, downloadPartPaths: secondParts }).manager;
+
+    const downloads = Promise.all([
+      first.download(ENTRY.id, { signal: new AbortController().signal }),
+      second.download(ENTRY.id, { signal: new AbortController().signal }),
+    ]);
+    await bothStarted;
+
+    const firstPart = firstParts.get(ENTRY.id);
+    const secondPart = secondParts.get(ENTRY.id);
+    expect(firstPart).toBeDefined();
+    expect(secondPart).toBeDefined();
+    expect(firstPart).not.toBe(secondPart);
+    expect(firstPart).not.toBe(`models/${ENTRY.id}/model.gguf.part`);
+    expect(secondPart).not.toBe(`models/${ENTRY.id}/model.gguf.part`);
+
+    await downloads;
+
+    expect(new Uint8Array(store.files.get(`models/${ENTRY.id}/model.gguf`) ?? [])).toEqual(PAYLOAD);
+    expect(firstParts.has(ENTRY.id)).toBe(false);
+    expect(secondParts.has(ENTRY.id)).toBe(false);
+    expect(store.files.has(`models/${ENTRY.id}/model.gguf.part`)).toBe(false);
+    expect([...store.files.keys()].filter((path) => path.endsWith('.part'))).toEqual([]);
+  });
+
+  it('keeps resumed bytes monotonic while the prefix is hashed', async () => {
+    const store = new MemoryFileStore();
+    const partPath = `models/${ENTRY.id}/model.local.part`;
+    await store.append(partPath, PAYLOAD.slice(0, 5), 0);
+    const statuses: ModelStatus[] = [];
+    const manager = new ModelManager({
+      store,
+      entries: entryRecord(ENTRY),
+      downloadPartPaths: new Map([[ENTRY.id, partPath]]),
+      createRuntime: async () => new FakeRuntime(() => 'こんにちは'),
+      fetchImpl: async () =>
+        new Response(PAYLOAD.slice(5), {
+          status: 206,
+          headers: {
+            'Content-Length': String(PAYLOAD.length - 5),
+            'Content-Range': `bytes 5-${String(PAYLOAD.length - 1)}/${String(PAYLOAD.length)}`,
+          },
+        }),
+      onStatus: (status) => statuses.push(status),
+    });
+
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+
+    expect(statuses.some((status) => status.state === 'verifying' && status.received === 5)).toBe(
+      false,
+    );
+    for (let index = 1; index < statuses.length; index += 1) {
+      expect(statuses[index]?.received ?? 0).toBeGreaterThanOrEqual(
+        statuses[index - 1]?.received ?? 0,
+      );
+      if (statuses[index - 1]?.state === 'verifying') {
+        expect(statuses[index]?.state).not.toBe('downloading');
+      }
+    }
+    expect(statuses.at(-1)).toMatchObject({ state: 'ready', progress: 1 });
+  });
+
+  it('finishes an active download in the store selected by a folder apply', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    const holder: { manager?: ModelManager; applying?: Promise<void> } = {};
+    let switched = false;
+    const originalCreateWriter = opfs.createWriter.bind(opfs);
+    opfs.createWriter = async (path, offset, options) => {
+      const writer = await originalCreateWriter(path, offset, options);
+      return {
+        write: async (chunk: Uint8Array) => {
+          await writer.write(chunk);
+          if (switched || !holder.manager) return;
+          switched = true;
+          holder.manager.setStores(shared, opfs);
+          holder.applying = holder.manager.adoptPresentModels();
+        },
+        close: () => writer.close(),
+      };
+    };
+    const created = createManager(opfs, {
+      fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+    });
+    holder.manager = created.manager;
+
+    await created.manager.download(ENTRY.id, { signal: new AbortController().signal });
+    await holder.applying;
+
+    const finalPath = `models/${ENTRY.id}/model.gguf`;
+    expect(switched).toBe(true);
+    expect(new Uint8Array(shared.files.get(finalPath) ?? [])).toEqual(PAYLOAD);
+    expect(new Uint8Array(opfs.files.get(finalPath) ?? [])).toEqual(PAYLOAD);
+    expect(shared.text(`models/${ENTRY.id}/model.json`)).toContain(ENTRY.sha256);
+    expect(await created.manager.primaryReady(ENTRY.id)).toBe(true);
+  });
+
+  it('does not certify different bytes already in the newly selected store', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    const finalPath = `models/${ENTRY.id}/model.gguf`;
+    const foreign = bytesOf('HELLO WORLD!');
+    await shared.append(finalPath, foreign, 0);
+    const holder: { manager?: ModelManager } = {};
+    const created = createManager(opfs, {
+      fetchImpl: async () => {
+        holder.manager?.setStores(shared, opfs);
+        return new Response(new Uint8Array(PAYLOAD), { status: 200 });
+      },
+    });
+    holder.manager = created.manager;
+
+    await expect(
+      created.manager.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'model-integrity' });
+
+    expect(shared.files.get(finalPath)).toEqual(foreign);
+    expect(shared.files.has(`models/${ENTRY.id}/model.json`)).toBe(false);
+  });
+
+  it('moves a saved partial prefix when a folder is picked before resuming', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    const partPath = `models/${ENTRY.id}/model.local.part`;
+    await opfs.append(partPath, PAYLOAD.slice(0, 4), 0);
+    const ranges: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      const range = (init?.headers as Record<string, string>).Range ?? '';
+      ranges.push(range);
+      const start = Number(/^bytes=(\d+)-/u.exec(range)?.[1] ?? 0);
+      return new Response(PAYLOAD.slice(start), {
+        status: 206,
+        headers: {
+          'Content-Length': String(PAYLOAD.length - start),
+          'Content-Range': `bytes ${String(start)}-${String(PAYLOAD.length - 1)}/${String(PAYLOAD.length)}`,
+        },
+      });
+    });
+    const { manager } = createManager(opfs, {
+      fetchImpl,
+      downloadPartPaths: new Map([[ENTRY.id, partPath]]),
+    });
+    manager.setStores(shared, opfs);
+    const progress: number[] = [];
+
+    await manager.download(ENTRY.id, {
+      signal: new AbortController().signal,
+      onProgress: (event) => progress.push(event.received),
+    });
+
+    expect(ranges[0]).toBe(`bytes=4-${String(PAYLOAD.length - 1)}`);
+    expect(progress[0]).toBe(4);
+    expect(opfs.files.has(partPath)).toBe(false);
+    expect(new Uint8Array(shared.files.get(`models/${ENTRY.id}/model.gguf`) ?? [])).toEqual(
+      PAYLOAD,
+    );
+  });
+
+  it('uses a fresh part when retrying after a writer watchdog error', async () => {
+    const store = new MemoryFileStore();
+    const parts = new Map<ModelId, string>();
+    const originalCreateWriter = store.createWriter.bind(store);
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }));
+    const { manager } = createManager(store, {
+      fetchImpl,
+      downloadPartPaths: parts,
+      stallTimeoutMs: 20,
+    });
+    store.createWriter = async () => new Promise(() => undefined);
+
+    await expect(
+      manager.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'download-failed', retryable: true });
+    expect(parts.has(ENTRY.id)).toBe(false);
+
+    store.createWriter = originalCreateWriter;
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(store.files.get(`models/${ENTRY.id}/model.gguf`)).toEqual(PAYLOAD);
+  });
+
+  it('loads one runtime at a time and reuses it', async () => {
+    const { manager, createRuntime } = await downloadedManager();
+
+    const [first, second] = await Promise.all([
+      manager.ensureLoaded(ENTRY.id, SELECTION),
+      manager.ensureLoaded(ENTRY.id, SELECTION),
+    ]);
+
+    expect(createRuntime).toHaveBeenCalledOnce();
+    expect(first.runtime).toBe(second.runtime);
+    expect(manager.loadedModel?.id).toBe(ENTRY.id);
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'loaded' });
+  });
+
+  it('unloads the runtime and can load it again', async () => {
+    const { manager, createRuntime } = await downloadedManager();
+    const loaded = await manager.ensureLoaded(ENTRY.id, SELECTION);
+
+    await manager.unload();
+    expect((loaded.runtime as FakeRuntime).disposed).toBe(true);
+    expect(manager.loadedModel).toBeNull();
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+
+    await manager.ensureLoaded(ENTRY.id, SELECTION);
+    expect(createRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a load without a downloaded model', async () => {
+    const store = new MemoryFileStore();
+    const { manager } = createManager(store);
+
+    await expect(manager.ensureLoaded(ENTRY.id, SELECTION)).rejects.toMatchObject({
+      code: 'model-missing',
+    });
+  });
+
+  it('maps a NotAllowedError on read to model-folder-permission, not a missing file', async () => {
+    const { manager, store } = await downloadedManager();
+    const original = store.read.bind(store);
+    store.read = async (path: string) => {
+      if (path.endsWith('model.gguf')) {
+        throw new DOMException('Permission denied.', 'NotAllowedError');
+      }
+      return original(path);
+    };
+
+    await expect(manager.ensureLoaded(ENTRY.id, SELECTION)).rejects.toMatchObject({
+      code: 'model-folder-permission',
+    });
+  });
+
+  it('propagates load failures and retries on the next call', async () => {
+    const { manager, createRuntime } = await downloadedManager();
+    createRuntime.mockRejectedValueOnce(new Error('out of memory'));
+
+    await expect(manager.ensureLoaded(ENTRY.id, SELECTION)).rejects.toThrow('out of memory');
+    expect(manager.loadedModel).toBeNull();
+
+    await expect(manager.ensureLoaded(ENTRY.id, SELECTION)).resolves.toBeDefined();
+    expect(createRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('deletes every file and unloads a loaded runtime', async () => {
+    const { manager, store } = await downloadedManager();
+    const loaded = await manager.ensureLoaded(ENTRY.id, SELECTION);
+
+    await manager.deleteModel(ENTRY.id);
+
+    expect((loaded.runtime as FakeRuntime).disposed).toBe(true);
+    expect(manager.loadedModel).toBeNull();
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'absent', received: 0 });
+    expect([...store.files.keys()].some((path) => path.startsWith(`models/${ENTRY.id}`))).toBe(
+      false,
+    );
+  });
+
+  it('skips a second hash when size and lastModified still match the sidecar', async () => {
+    const store = new MemoryFileStore();
+    const hashBlob = vi.fn(async (blob: Blob) =>
+      sha256Hex(new Uint8Array(await blob.arrayBuffer())),
+    );
+    const hashing = new ModelManager({
+      store,
+      entries: entryRecord(ENTRY),
+      createRuntime: async () => new FakeRuntime(() => 'こんにちは'),
+      fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+      hashBlob,
+    });
+
+    await hashing.download(ENTRY.id, { signal: new AbortController().signal });
+    const afterDownload = hashBlob.mock.calls.length;
+    expect(await hashing.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+    expect(hashBlob.mock.calls.length).toBe(afterDownload);
+
+    await hashing.ensureLoaded(ENTRY.id, SELECTION);
+    expect(hashBlob.mock.calls.length).toBe(afterDownload);
+  });
+
+  it('rehashes when lastModified changes and rejects a digest mismatch', async () => {
+    const store = new MemoryFileStore();
+    const hashing = new ModelManager({
+      store,
+      entries: entryRecord(ENTRY),
+      createRuntime: async () => new FakeRuntime(() => 'こんにちは'),
+      fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+    });
+    await hashing.download(ENTRY.id, { signal: new AbortController().signal });
+
+    store.files.set(`models/${ENTRY.id}/model.gguf`, bytesOf('tampered!!!!'));
+    store.modified.set(`models/${ENTRY.id}/model.gguf`, Date.now() + 10_000);
+
+    await expect(
+      hashing.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'model-integrity' });
+    expect(await hashing.status(ENTRY.id)).toMatchObject({
+      state: 'error',
+      error: INTEGRITY_REVISION_ERROR,
+    });
+  });
+
+  it('refuses a file whose size is not the pin, and does not download over it', async () => {
+    const store = new MemoryFileStore();
+    await store.append(`models/${ENTRY.id}/model.gguf`, bytesOf('nope'), 0);
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }));
+    const { manager } = createManager(store, { fetchImpl });
+
+    await expect(
+      manager.download(ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'model-integrity', message: INTEGRITY_SIZE_ERROR });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await manager.status(ENTRY.id)).toMatchObject({
+      state: 'error',
+      error: INTEGRITY_SIZE_ERROR,
+    });
+  });
+
+  it('deletes the browser copy when OPFS is primary during a folder outage', async () => {
+    const opfs = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager } = createManager(opfs);
+    manager.setStores(opfs, undefined, { primaryIsBrowserCopy: true });
+
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(true);
+    await manager.deleteFallbackCopy(ENTRY.id);
+
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(false);
+  });
+
+  it('leaves the primary store alone when it is not marked as the browser copy', async () => {
+    const opfs = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager } = createManager(opfs);
+    manager.setStores(opfs);
+
+    await manager.deleteFallbackCopy(ENTRY.id);
+
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(true);
+  });
+
+  it('reports a readable copy from OPFS as primary or as the folder fallback', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager } = createManager(opfs);
+
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(true);
+
+    manager.setStores(shared, opfs);
+    expect(await manager.primaryReady(ENTRY.id)).toBe(false);
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(true);
+
+    await manager.deleteFallbackCopy(ENTRY.id);
+    expect(await manager.hasReadableCopy(ENTRY.id)).toBe(false);
+  });
+
+  it('loads from the OPFS fallback when the shared folder has no file yet', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    const { manager, createRuntime } = createManager(opfs, {
+      fetchImpl: async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }),
+    });
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+    manager.setStores(shared, opfs);
+
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+    await manager.ensureLoaded(ENTRY.id, SELECTION);
+    expect(createRuntime).toHaveBeenCalledOnce();
+    expect(new Uint8Array(await (await manager.modelBlob(ENTRY.id)).arrayBuffer())).toEqual(
+      PAYLOAD,
+    );
+
+    await manager.deleteModel(ENTRY.id);
+    expect(shared.files.size).toBe(0);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(true);
+
+    await manager.deleteFallbackCopy(ENTRY.id);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(false);
+  });
+
+  it('copies a verified OPFS model into an empty shared folder without fetching', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, { fallbackStore: opfs, fetchImpl });
+
+    await manager.adoptPresentModels();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready', progress: 1 });
+    expect(new Uint8Array(shared.files.get(`models/${ENTRY.id}/model.gguf`) ?? [])).toEqual(
+      PAYLOAD,
+    );
+    expect(shared.text(`models/${ENTRY.id}/model.json`)).toContain(ENTRY.sha256);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(true);
+    await manager.ensureLoaded(ENTRY.id, SELECTION);
+    expect(new Uint8Array(await (await manager.modelBlob(ENTRY.id)).arrayBuffer())).toEqual(
+      PAYLOAD,
+    );
+  });
+
+  it('moves OPFS into the folder and deletes the browser copy after verification', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager } = createManager(shared, { fallbackStore: opfs });
+
+    const moved = await manager.adoptPresentModelsAndRemoveOpfs();
+
+    expect(moved).toEqual([ENTRY.id]);
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('keeps the OPFS copy when the folder move fails verification', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager } = createManager(shared, {
+      fallbackStore: opfs,
+      hashBlob: async () => 'f'.repeat(64),
+    });
+
+    await manager.adoptPresentModelsAndRemoveOpfs();
+
+    expect(await manager.primaryReady(ENTRY.id)).toBe(false);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(true);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+  });
+
+  it('copies verified folder models into OPFS and leaves the folder files alone', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(shared);
+    const { manager } = createManager(shared, { fallbackStore: opfs });
+
+    const copied = await manager.copyPresentModelsToBrowser();
+
+    expect(copied).toEqual([ENTRY.id]);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(true);
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(opfs.text(`models/${ENTRY.id}/model.json`)).toContain(ENTRY.sha256);
+  });
+
+  it('reports no copied models when the folder has no official model', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    const { manager } = createManager(shared, { fallbackStore: opfs });
+
+    const copied = await manager.copyPresentModelsToBrowser();
+
+    expect(copied).toEqual([]);
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(false);
+    expect(shared.files.size).toBe(0);
+  });
+
+  it('does not drop a folder with a bad file when moving to browser storage', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await shared.append(`models/${ENTRY.id}/model.gguf`, bytesOf('nope'), 0);
+    const { manager } = createManager(shared, { fallbackStore: opfs });
+
+    await expect(manager.copyPresentModelsToBrowser()).rejects.toMatchObject({
+      code: 'model-integrity',
+    });
+
+    expect(await manager.fallbackCopyPresent(ENTRY.id)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('downloads by moving from OPFS instead of hitting the network', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, { fallbackStore: opfs, fetchImpl });
+
+    await manager.download(ENTRY.id, { signal: new AbortController().signal });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('keeps the OPFS copy when folder verification fails', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, {
+      fallbackStore: opfs,
+      fetchImpl,
+      hashBlob: async () => 'f'.repeat(64),
+    });
+
+    await manager.adoptPresentModels();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await manager.primaryReady(ENTRY.id)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf.part`)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('does not copy a digest-failed OPFS model again on the next adopt', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const hashBlob = vi.fn(async () => 'f'.repeat(64));
+    const { manager } = createManager(shared, { fallbackStore: opfs, hashBlob });
+
+    await manager.adoptPresentModels();
+    await manager.adoptPresentModels();
+
+    expect(hashBlob).toHaveBeenCalledOnce();
+    expect(await manager.primaryReady(ENTRY.id)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+
+    const { manager: restarted } = createManager(shared, { fallbackStore: opfs, hashBlob });
+    await restarted.adoptPresentModels();
+    expect(hashBlob).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the loaded OPFS runtime and browser copy after sharing the model', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager, createRuntime } = createManager(shared, { fallbackStore: opfs });
+    await manager.ensureLoaded(ENTRY.id, SELECTION);
+    expect(createRuntime).toHaveBeenCalledOnce();
+    expect(manager.loadedModel?.id).toBe(ENTRY.id);
+
+    await manager.adoptPresentModels();
+
+    expect(manager.loadedModel?.id).toBe(ENTRY.id);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+    await manager.ensureLoaded(ENTRY.id, SELECTION);
+    expect(createRuntime).toHaveBeenCalledOnce();
+    expect(manager.loadedModel?.id).toBe(ENTRY.id);
+  });
+
+  it('falls back to the retained OPFS copy when the shared folder is revoked', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const { manager, createRuntime } = createManager(shared, { fallbackStore: opfs });
+    await manager.adoptPresentModels();
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+
+    const originalStat = shared.stat.bind(shared);
+    shared.stat = async () => null;
+    shared.read = async () => {
+      throw new DOMException('Permission denied.', 'NotAllowedError');
+    };
+    try {
+      expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+      await manager.ensureLoaded(ENTRY.id, SELECTION);
+      expect(createRuntime).toHaveBeenCalledOnce();
+      expect(manager.loadedModel?.id).toBe(ENTRY.id);
+    } finally {
+      shared.stat = originalStat;
+    }
+  });
+
+  it('leaves no valid shared file when an OPFS copy is interrupted', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, {
+      fallbackStore: opfs,
+      fetchImpl,
+      copyChunkBytes: 4,
+    });
+    const controller = new AbortController();
+
+    await expect(
+      manager.download(ENTRY.id, {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (progress.phase === 'download' && progress.received > 0) controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'aborted' });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.gguf.part`)).toBe(false);
+    expect(shared.files.has(`models/${ENTRY.id}/model.json`)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('does not copy an OPFS model over a pin-sized folder file that only needs a hash', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    await shared.append(`models/${ENTRY.id}/model.gguf`, PAYLOAD, 0);
+    const before = shared.files.get(`models/${ENTRY.id}/model.gguf`);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, { fallbackStore: opfs, fetchImpl });
+
+    await manager.adoptPresentModels();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(shared.files.get(`models/${ENTRY.id}/model.gguf`)).toBe(before);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+    expect(await manager.primaryReady(ENTRY.id)).toBe(true);
+  });
+
+  it('does not copy an OPFS model over a wrong-sized file already in the folder', async () => {
+    const opfs = new MemoryFileStore();
+    const shared = new MemoryFileStore();
+    await seedVerified(opfs);
+    await shared.append(`models/${ENTRY.id}/model.gguf`, bytesOf('nope'), 0);
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network download should not run');
+    });
+    const { manager } = createManager(shared, { fallbackStore: opfs, fetchImpl });
+
+    await manager.adoptPresentModels();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(new TextDecoder().decode(shared.files.get(`models/${ENTRY.id}/model.gguf`))).toBe(
+      'nope',
+    );
+    expect(await manager.primaryReady(ENTRY.id)).toBe(false);
+    expect(opfs.files.has(`models/${ENTRY.id}/model.gguf`)).toBe(true);
+  });
+
+  it('adopts a correctly sized file already in the shared folder without fetching', async () => {
+    const store = new MemoryFileStore();
+    await store.append(`models/${ENTRY.id}/model.gguf`, PAYLOAD, 0);
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(PAYLOAD), { status: 200 }));
+    const { manager } = createManager(store, { fetchImpl });
+
+    await manager.adoptPresentModels();
+    expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'ready' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(store.text(`models/${ENTRY.id}/model.json`)).toContain(ENTRY.sha256);
+  });
+
+  it('keeps integrity failures as tokens, not user-facing English', () => {
+    expect(isModelIntegrityError(INTEGRITY_SIZE_ERROR)).toBe(true);
+    expect(isModelIntegrityError(INTEGRITY_DIGEST_ERROR)).toBe(true);
+    expect(isModelIntegrityError(INTEGRITY_REVISION_ERROR)).toBe(true);
+    expect(isModelIntegrityError('The file is not the official PLaMo model')).toBe(false);
+    expect(INTEGRITY_SIZE_ERROR).toBe('integrity-size');
+    expect(INTEGRITY_DIGEST_ERROR).toBe('integrity-digest');
+  });
+});
+
+const MULTI_PAYLOADS = [
+  PAYLOAD,
+  bytesOf('official model bytes!!'),
+  bytesOf('official model bytes!!!!'),
+];
+const MULTI_REVISIONS = MULTI_PAYLOADS.map((bytes, index) => ({
+  commit: `multi-c${String(index + 1)}`,
+  size: bytes.length,
+  sha256: sha256Hex(bytes),
+}));
+const MULTI_ENTRY = makeEntry({
+  size: MULTI_REVISIONS[0]?.size ?? 0,
+  sha256: MULTI_REVISIONS[0]?.sha256 ?? '',
+  revisions: MULTI_REVISIONS,
+});
+const MULTI_FINAL = `models/${MULTI_ENTRY.id}/model.gguf`;
+const MULTI_MANIFEST = `models/${MULTI_ENTRY.id}/model.json`;
+
+function multiManager(store: MemoryFileStore, fallbackStore?: MemoryFileStore): ModelManager {
+  return new ModelManager({
+    store,
+    ...(fallbackStore ? { fallbackStore } : {}),
+    entries: entryRecord(MULTI_ENTRY),
+    createRuntime: async () => new FakeRuntime(() => 'こんにちは'),
+    fetchImpl: async () => {
+      throw new Error('no network needed for a verified local file');
+    },
+  });
+}
+
+async function plantVerified(store: MemoryFileStore, bytes: Uint8Array): Promise<void> {
+  await store.append(MULTI_FINAL, bytes, 0);
+  const manager = multiManager(store);
+  await manager.download(MULTI_ENTRY.id, { signal: new AbortController().signal });
+}
+
+describe('ModelManager known revisions', () => {
+  it('verifies every known revision without downloading and records its manifest', async () => {
+    for (const [index, revision] of MULTI_REVISIONS.entries()) {
+      const bytes = MULTI_PAYLOADS[index];
+      if (!bytes) throw new Error('missing fixture');
+      const store = new MemoryFileStore();
+      await store.append(MULTI_FINAL, bytes, 0);
+      const manager = multiManager(store);
+
+      expect(await manager.status(MULTI_ENTRY.id)).toMatchObject({ state: 'verifying' });
+      await manager.download(MULTI_ENTRY.id, { signal: new AbortController().signal });
+
+      expect(await manager.primaryReady(MULTI_ENTRY.id)).toBe(true);
+      expect(JSON.parse(store.text(MULTI_MANIFEST))).toMatchObject({
+        sha256: revision.sha256,
+        size: revision.size,
+        commit: revision.commit,
+      });
+      expect(await manager.status(MULTI_ENTRY.id)).toMatchObject({
+        state: 'ready',
+        total: revision.size,
+      });
+    }
+  });
+
+  it('adopts each known OPFS revision into an empty shared folder', async () => {
+    for (const [index, revision] of MULTI_REVISIONS.entries()) {
+      const bytes = MULTI_PAYLOADS[index];
+      if (!bytes) throw new Error('missing fixture');
+      const opfs = new MemoryFileStore();
+      await plantVerified(opfs, bytes);
+      const shared = new MemoryFileStore();
+      const manager = multiManager(shared, opfs);
+
+      await manager.adoptPresentModels();
+
+      expect(await manager.primaryReady(MULTI_ENTRY.id)).toBe(true);
+      expect(shared.files.get(MULTI_FINAL)).toEqual(bytes);
+      expect(JSON.parse(shared.text(MULTI_MANIFEST))).toMatchObject({
+        sha256: revision.sha256,
+        size: revision.size,
+        commit: revision.commit,
+      });
+    }
+  });
+
+  it('rejects an unknown hash of a known size and reports an unknown revision', async () => {
+    const store = new MemoryFileStore();
+    const unknown = bytesOf('!'.repeat(MULTI_REVISIONS[1]?.size ?? 0));
+    await store.append(MULTI_FINAL, unknown, 0);
+    const manager = multiManager(store);
+
+    await expect(
+      manager.download(MULTI_ENTRY.id, { signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'model-integrity' });
+    expect(await manager.status(MULTI_ENTRY.id)).toMatchObject({
+      state: 'error',
+      error: INTEGRITY_REVISION_ERROR,
+    });
+    expect(await manager.sharedIntegrityIssue(MULTI_ENTRY.id)).toMatchObject({
+      kind: 'revision',
+      file: MULTI_ENTRY.file,
+    });
+    expect(store.files.has(MULTI_MANIFEST)).toBe(false);
+  });
+
+  it('does not report an integrity issue for a model with no folder file', async () => {
+    const store = new MemoryFileStore();
+    const manager = multiManager(store);
+
+    expect(await manager.sharedIntegrityIssue(MULTI_ENTRY.id)).toBeNull();
+  });
+
+  it('reports a different-sized file as the wrong file', async () => {
+    const store = new MemoryFileStore();
+    await store.append(MULTI_FINAL, bytesOf('short'), 0);
+    const manager = multiManager(store);
+
+    expect(await manager.sharedIntegrityIssue(MULTI_ENTRY.id)).toMatchObject({
+      kind: 'size',
+      file: MULTI_ENTRY.file,
+    });
+    expect(await manager.status(MULTI_ENTRY.id)).toMatchObject({
+      state: 'error',
+      error: INTEGRITY_SIZE_ERROR,
+    });
+  });
+});

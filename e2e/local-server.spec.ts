@@ -1,0 +1,286 @@
+import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { expect, test, type Page } from '@playwright/test';
+import { loadExtension } from './extension';
+import { FIXTURE_ORIGIN, commandPage, waitTranslated } from './page';
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    request.on('error', reject);
+  });
+}
+
+interface RecordedCompletion {
+  prompt: string;
+}
+
+async function startFakeServer(): Promise<{
+  url: string;
+  close: () => Promise<void>;
+  completions: RecordedCompletion[];
+}> {
+  const completions: RecordedCompletion[] = [];
+  const server: Server = createServer((request, response) => {
+    void (async () => {
+      const raw = await readBody(request);
+      const url = request.url ?? '';
+      if (url.includes('/models')) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ data: [{ id: 'pfnet/plamo-3-translate-0.8b-MLX-4bit' }] }));
+        return;
+      }
+      if (url.includes('/completions')) {
+        const body = raw.length > 0 ? (JSON.parse(raw) as { prompt?: unknown }) : {};
+        completions.push({ prompt: typeof body.prompt === 'string' ? body.prompt : '' });
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            choices: [{ text: 'LOCAL-SERVER-PFML3', finish_reason: 'stop' }],
+          }),
+        );
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('expected a TCP address');
+  return {
+    url: `http://127.0.0.1:${String(address.port)}/v1`,
+    completions,
+    close: () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  };
+}
+
+test.describe('local server options', () => {
+  test('tests a mocked OpenAI-compatible server from Settings', async () => {
+    const fake = await startFakeServer();
+    const extension = await loadExtension('en-US');
+    try {
+      const page = await extension.context.newPage();
+      await page.goto(`chrome-extension://${extension.extensionId}/options.html`);
+      await expect(page.getByText('Translation engine')).toBeVisible();
+      await page.getByRole('radio', { name: 'Local server (experimental)' }).click();
+      await page.getByRole('button', { name: 'Use local server' }).click();
+      const serverUrl = page.getByLabel('Server URL');
+      await serverUrl.fill(fake.url);
+      await serverUrl.press('Tab');
+      await expect(serverUrl).toHaveValue(fake.url);
+      const testRow = page.locator('.test-row');
+      const testButton = testRow.getByRole('button', { name: 'Test connection' });
+      await expect(testButton).toBeEnabled();
+      await testButton.click();
+      await expect(testRow.getByRole('status')).toHaveText('Connected.', { timeout: 30_000 });
+      await page.close();
+    } finally {
+      await extension.close();
+      await fake.close();
+    }
+  });
+
+  test('translates a page through a mock /v1/completions that receives PFML3', async () => {
+    const fake = await startFakeServer();
+    const extension = await loadExtension('en-US');
+    try {
+      const options = await extension.context.newPage();
+      await options.goto(`chrome-extension://${extension.extensionId}/options.html`);
+      await options.getByRole('radio', { name: 'Local server (experimental)' }).click();
+      await options.getByRole('button', { name: 'Use local server' }).click();
+      const serverUrl = options.getByLabel('Server URL');
+      await serverUrl.fill(fake.url);
+      await serverUrl.press('Tab');
+      await expect(serverUrl).toHaveValue(fake.url);
+      await options
+        .getByLabel('Model', { exact: true })
+        .fill('pfnet/plamo-3-translate-0.8b-MLX-4bit');
+      await options.getByLabel('Model', { exact: true }).press('Tab');
+      const testRow = options.locator('.test-row');
+      const testButton = testRow.getByRole('button', { name: 'Test connection' });
+      await expect(testButton).toBeEnabled();
+      await testButton.click();
+      await expect(testRow.getByRole('status')).toHaveText('Connected.', { timeout: 30_000 });
+
+      await expect
+        .poll(async () => {
+          return options.evaluate(async () => {
+            const chrome = (
+              globalThis as unknown as {
+                chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+              }
+            ).chrome;
+            return chrome.runtime.sendMessage({ type: 'engine:status' });
+          });
+        })
+        .toMatchObject({ backend: 'local-server', engineSource: 'local-server' });
+
+      const probed = fake.completions.length;
+      const page = await extension.context.newPage();
+      await page.goto(`${FIXTURE_ORIGIN}/cjk.html`);
+      await commandPage(extension.worker, page, 'toggle');
+      await waitTranslated(page);
+      await expect(page.locator('#lead')).toHaveText('LOCAL-SERVER-PFML3');
+      expect(fake.completions.length).toBeGreaterThan(probed);
+      expect(fake.completions.some((entry) => entry.prompt.includes('<|plamo:tag|>dataset'))).toBe(
+        true,
+      );
+
+      const after = await options.evaluate(async () => {
+        const chrome = (
+          globalThis as unknown as {
+            chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+          }
+        ).chrome;
+        return chrome.runtime.sendMessage({ type: 'engine:status' });
+      });
+      expect(after).toMatchObject({ backend: 'local-server', engineSource: 'local-server' });
+      await page.close();
+      await options.close();
+    } finally {
+      await extension.close();
+      await fake.close();
+    }
+  });
+
+  test('an upgraded profile that already stored local-server reports that backend', async () => {
+    const fake = await startFakeServer();
+    const extension = await loadExtension('en-US');
+    try {
+      const options = await extension.context.newPage();
+      await options.goto(`chrome-extension://${extension.extensionId}/options.html`);
+      await options.evaluate(
+        async (stored) => {
+          const chrome = (
+            globalThis as unknown as {
+              chrome: {
+                storage: { local: { set: (items: Record<string, unknown>) => Promise<void> } };
+              };
+            }
+          ).chrome;
+          await chrome.storage.local.set({ settings: stored });
+        },
+        {
+          schemaVersion: 1,
+          targetLanguage: 'en',
+          engineSource: 'local-server',
+          localServerUrl: fake.url,
+          localServerModel: 'pfnet/plamo-3-translate-0.8b-MLX-4bit',
+          consent: {
+            license: 'plamo-community',
+            version: '2026-11-05',
+            acceptedAt: '2026-11-05T00:00:00.000Z',
+            ageNoticeShown: true,
+          },
+        },
+      );
+      await expect
+        .poll(async () => {
+          return options.evaluate(async () => {
+            const chrome = (
+              globalThis as unknown as {
+                chrome: { runtime: { sendMessage(message: unknown): Promise<unknown> } };
+              }
+            ).chrome;
+            return chrome.runtime.sendMessage({ type: 'engine:status' });
+          });
+        })
+        .toMatchObject({ backend: 'local-server', engineSource: 'local-server' });
+      await options.close();
+    } finally {
+      await extension.close();
+      await fake.close();
+    }
+  });
+
+  test('denying host permission after experimental ack keeps the built-in radio checked', async () => {
+    const extension = await loadExtension('en-US');
+    try {
+      const page = await extension.context.newPage();
+      await page.goto(`chrome-extension://${extension.extensionId}/options.html`);
+      await expect(page.getByText('Translation engine')).toBeVisible();
+      await page.evaluate(async () => {
+        const chrome = (
+          globalThis as unknown as {
+            chrome: {
+              storage: {
+                local: {
+                  get: (key: string) => Promise<Record<string, unknown>>;
+                  set: (items: Record<string, unknown>) => Promise<void>;
+                };
+              };
+            };
+          }
+        ).chrome;
+        const stored = await chrome.storage.local.get('settings');
+        const current = (stored.settings ?? {}) as Record<string, unknown>;
+        await chrome.storage.local.set({
+          settings: {
+            ...current,
+            engineSource: 'in-browser',
+            localServerExperimentalAck: true,
+          },
+        });
+      });
+      await page.reload();
+      await expect(page.getByText('Translation engine')).toBeVisible();
+      await stubHostPermission(page, false);
+
+      const builtin = page.getByRole('radio', { name: 'Built-in (on this device)' });
+      const local = page.getByRole('radio', { name: 'Local server (experimental)' });
+      await expect(builtin).toBeChecked();
+      await expect(local).not.toBeChecked();
+
+      await local.click();
+
+      await expect(page.getByRole('button', { name: 'Use local server' })).toHaveCount(0);
+      await expect(
+        page.getByRole('alert').filter({
+          hasText: 'The browser did not grant access to this address.',
+        }),
+      ).toBeVisible();
+      await expect(builtin).toBeChecked();
+      await expect(local).not.toBeChecked();
+      await expect(page.locator('label.on')).toContainText('Built-in (on this device)');
+
+      const stored = await page.evaluate(async () => {
+        const chrome = (
+          globalThis as unknown as {
+            chrome: {
+              storage: { local: { get: (key: string) => Promise<Record<string, unknown>> } };
+            };
+          }
+        ).chrome;
+        const value = await chrome.storage.local.get('settings');
+        return value.settings as { engineSource?: string; localServerExperimentalAck?: boolean };
+      });
+      expect(stored).toMatchObject({
+        engineSource: 'in-browser',
+        localServerExperimentalAck: true,
+      });
+      await page.close();
+    } finally {
+      await extension.close();
+    }
+  });
+});
+
+async function stubHostPermission(page: Page, granted: boolean): Promise<void> {
+  await page.evaluate((granted) => {
+    const apply = (api: unknown) => {
+      if (!api || typeof api !== 'object' || !('permissions' in api)) return;
+      const permissions = Reflect.get(api, 'permissions') as
+        { contains?: unknown; request?: unknown } | undefined;
+      if (!permissions) return;
+      permissions.contains = async () => granted;
+      permissions.request = async () => granted;
+    };
+    apply(Reflect.get(globalThis, 'chrome'));
+    apply(Reflect.get(globalThis, 'browser'));
+  }, granted);
+}

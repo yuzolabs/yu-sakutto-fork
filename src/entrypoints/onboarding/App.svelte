@@ -1,0 +1,1193 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from 'wxt/browser';
+  import { DEFAULT_MODEL_ID, HIGH_QUALITY_MODEL_ID, getModel } from '@/engine/model/catalog';
+  import { FOLDER_PERMISSION_ERROR } from '@/engine/model/folder-permission';
+  import {
+    emptySharedFolderStatus,
+    sharedFolderNeedsPermission,
+    type SharedFolderStatus,
+  } from '@/engine/model/folder-status';
+  import { isModelIntegrityError } from '@/engine/model/manager';
+  import { isAbortError } from '@/engine/errors';
+  import {
+    copySharedFolderFilesToOpfs,
+    type FolderCopyProgress,
+  } from '@/engine/model/folder-import';
+  import { OpfsModelFileStore } from '@/engine/model/file-store';
+  import {
+    clearStoredSharedFolder,
+    ensureStoredFolderPermission,
+    persistSharedFolderHandle,
+    preparePickedSharedFolder,
+    sharedFolderPickerAvailable,
+    sharedFolderSupported,
+  } from '@/engine/model/shared-folder';
+  import {
+    defaultOnboardingStoreChoice,
+    planOnboardingDownload,
+    shouldPrepareTranslatorPack,
+    type OnboardingStoreChoice,
+  } from '@/ui/onboarding-store';
+  import type { ModelStatus } from '@/shared/engine-status';
+  import { agreementFromStorage } from '@/shared/agreement';
+  import { hasBuiltInTranslatorUi, isBraveBrowser } from '@/shared/browser';
+  import {
+    currentUiLanguage,
+    integrityMessageKey,
+    t,
+    tForBrowser,
+    type MessageKey,
+  } from '@/shared/i18n';
+  import { resolveTargetLanguage, type TargetLanguage } from '@/shared/languages';
+  import {
+    isModelProgressMessage,
+    requestModelAttach,
+    requestModelCancel,
+    requestModelDownload,
+    requestEngineWarm,
+    requestModelFolderAdopt,
+    requestModelFolderReload,
+    requestModelFolderToBrowser,
+    requestEngineStatus,
+    requestModelInspect,
+    requestShortcutSnapshot,
+  } from '@/shared/messages';
+  import { advanceModelStatus } from '@/shared/model-progress';
+  import {
+    SHORTCUT_COMMANDS,
+    boundShortcut,
+    defaultShortcuts,
+    displayShortcut,
+    type ShortcutCommand,
+  } from '@/shared/shortcuts';
+  import { PLAMO_OFFICIAL_LINKS, PROJECT_LINKS } from '@/shared/plamo-license';
+  import {
+    PLAMO_LICENSE_VERSION,
+    PLAMO_NOTICE_VERSION,
+    needsLicenseReconsent,
+  } from '@/shared/settings';
+  import { loadSettings, saveSettings } from '@/shared/storage';
+  import { prepareTranslatorPack } from '@/shared/translator-pack';
+  import FolderPermissionRestore from '@/ui/FolderPermissionRestore.svelte';
+  import ModelStorageChoice, { type ModelStorageChoiceValue } from '@/ui/ModelStorageChoice.svelte';
+  import { pickDirectoryFiles } from '@/ui/folder-input';
+  import { estimateRemainingMs, type ByteMark } from '@/ui/download-eta';
+  import { formatByteSize, formatByteSizeList } from '@/ui/format';
+  import {
+    onboardingCanTry,
+    onboardingErrorMessage,
+    onboardingPhaseAfterStatus,
+    shouldApplyOnboardingPollResult,
+    shouldPollOnboardingProgress,
+    type OnboardingPhase,
+  } from '@/ui/onboarding-phase';
+
+  const licenseLinks = {
+    plamoJa: browser.runtime.getURL('/licenses/PLaMo-Community-License-ja.txt'),
+    plamoEn: browser.runtime.getURL('/licenses/PLaMo-Community-License-en.txt'),
+    mit: browser.runtime.getURL('/licenses/LICENSE.txt'),
+    notice: browser.runtime.getURL('/licenses/NOTICE.txt'),
+  };
+
+  const officialLinks = PLAMO_OFFICIAL_LINKS;
+  const projectLinks = PROJECT_LINKS;
+
+  const model = getModel(DEFAULT_MODEL_ID);
+  const folderSizeLabel = formatByteSizeList([
+    getModel(DEFAULT_MODEL_ID).size,
+    getModel(HIGH_QUALITY_MODEL_ID).size,
+  ]);
+  const storageBenefits = {
+    leadKey: 'modelFolderBenefitsLead' as MessageKey,
+    sizeLabel: folderSizeLabel,
+  };
+  const chromiumNotes: readonly MessageKey[] = [
+    'onboardingStoreFolderHelp',
+    'modelFolderPickerHint',
+    'modelFolderPersistentHint',
+  ];
+  const firefoxNotes: readonly MessageKey[] = ['modelStorageFirefoxCopyHint'];
+  const braveBrowser = isBraveBrowser();
+
+  type Phase = OnboardingPhase;
+
+  let targetLanguage = $state<TargetLanguage>(resolveTargetLanguage(currentUiLanguage()));
+  let startRequested = $state(false);
+  let consentSaved = $state(false);
+  let pickerAvailable = $derived(sharedFolderPickerAvailable());
+  let showBrowserOnly = $derived(sharedFolderSupported() && !pickerAvailable);
+  let storeChoice = $state<ModelStorageChoiceValue>(
+    defaultOnboardingStoreChoice(sharedFolderPickerAvailable()),
+  );
+  let storeTouched = $state(false);
+  let pickError = $state<string | null>(null);
+  let copyInput = $state<HTMLInputElement | null>(null);
+  let copyProgress = $state<FolderCopyProgress | null>(null);
+  let copyController: AbortController | null = null;
+  let copyingFolder = $state(false);
+  let readingFolder = $state(false);
+  let integrityAlert = $state<string | null>(null);
+  let resolvedFolderName = $state<string | null>(null);
+  /**
+   * True when a stored consent predates the clearer commercial summary. That user already
+   * agreed to the same license; they are shown the new notice once more, and the click
+   * rewrites the record without touching the downloaded model.
+   */
+  let reconsent = $state(false);
+  let phase = $state<Phase>('consent');
+  let failureDetail = $state<string | null>(null);
+  let received = $state(0);
+  let total = $state(model.size);
+  let progress = $state(0);
+  let modelState = $state<ModelStatus['state']>('absent');
+  let lastStatus = $state<ModelStatus | null>(null);
+  let engineFolder = $state<SharedFolderStatus>(
+    emptySharedFolderStatus(sharedFolderPickerAvailable()),
+  );
+  let closing = $state(false);
+  let closeFailed = $state(false);
+  let tryFailed = $state(false);
+  let continued = $state(false);
+  let marks = $state<ByteMark[]>([]);
+  let now = $state(Date.now());
+  /** Set after a Firefox folder copy finished so Start does not open the picker again. */
+  let firefoxCopyDone = $state(false);
+
+  /**
+   * The keys Chrome has bound right now, so the "you are ready" checklist names the keys the
+   * reader will actually press rather than the values the manifest shipped with.
+   */
+  let bound = $state<Record<ShortcutCommand, string>>({ ...defaultShortcuts() });
+
+  function keyText(command: ShortcutCommand): string {
+    const shortcut = bound[command];
+    return shortcut.length > 0 ? displayShortcut(shortcut) : t('shortcutUnset');
+  }
+
+  let readyPage = $derived(t('onboardingReadyPage', [keyText('translate-page')]));
+  let readySelection = $derived(t('onboardingReadySelection', [keyText('translate-selection')]));
+  let readyCompose = $derived(t('onboardingReadyCompose', [keyText('translate-compose')]));
+
+  let percent = $derived(Math.max(0, Math.min(100, Math.round(progress * 100))));
+  let etaLabel = $derived.by(() => {
+    if (phase !== 'downloading' || modelState !== 'downloading') return null;
+    const remaining = estimateRemainingMs(marks, total, now);
+    if (remaining === null || remaining <= 0) return null;
+    const seconds = Math.max(1, Math.round(remaining / 1000));
+    if (seconds < 90) return t('downloadEtaSeconds', [String(seconds)]);
+    return t('downloadEtaMinutes', [String(Math.max(1, Math.round(seconds / 60)))]);
+  });
+  let statusText = $derived.by(() => {
+    if (modelState === 'verifying') {
+      return `${t('runtimeVerifying')} ${formatByteSize(received)} / ${formatByteSize(total)}`;
+    }
+    if (modelState === 'loading') return t('runtimeLoading');
+    if (modelState === 'downloading') {
+      return t('runtimeDownloading', [
+        String(percent),
+        formatByteSize(received),
+        formatByteSize(total),
+      ]);
+    }
+    return `${formatByteSize(received)} / ${formatByteSize(total)}`;
+  });
+  let showStartButton = $derived(
+    !consentSaved || phase === 'paused' || phase === 'error' || Boolean(integrityAlert),
+  );
+  /**
+   * A sample page is only offered once the model is on disk. While the file is still
+   * downloading, verifying, or loading there is nothing to sample: the page would keep its
+   * source text and read as broken, so the control is not rendered at all until then.
+   */
+  let showTryButton = $derived(onboardingCanTry(phase));
+  // Consent is stored before a folder is linked. A bad file in that folder must
+  // still show the store radios and the integrity alert, not a blank start screen.
+  let showStartNotice = $derived((showStartButton && !consentSaved) || Boolean(integrityAlert));
+  let failureText = $derived(
+    phase === 'error'
+      ? onboardingErrorMessage({
+          error: failureDetail ?? undefined,
+          fallback: t('onboardingStartFailed'),
+          http: (status) => t('onboardingHttpError', [status]),
+        })
+      : null,
+  );
+  let folderBlocked = $derived(
+    sharedFolderNeedsPermission(engineFolder) || lastStatus?.error === FOLDER_PERMISSION_ERROR,
+  );
+
+  function applyStatus(status: ModelStatus) {
+    if (status.id !== DEFAULT_MODEL_ID) return;
+    const next = advanceModelStatus(lastStatus, status);
+    lastStatus = next;
+    received = next.received;
+    total = next.total || model.size;
+    progress = next.progress;
+    modelState = next.state;
+    if (next.error === FOLDER_PERMISSION_ERROR) {
+      failureDetail = null;
+      phase = 'consent';
+      return;
+    }
+    if (next.state === 'error') {
+      const integrity = isModelIntegrityError(next.error);
+      if (integrity) {
+        integrityAlert = t(integrityMessageKey(next.error), [model.file]);
+        if (status.state === 'downloading') noteBytes(next.received);
+        startRequested = false;
+        phase = 'consent';
+        return;
+      }
+      failureDetail = next.error ?? null;
+    } else if (next.state === 'downloading' || next.state === 'ready' || next.state === 'loaded') {
+      failureDetail = null;
+    }
+    if (status.state === 'downloading') noteBytes(next.received);
+    phase = onboardingPhaseAfterStatus(phase, next.state, consentSaved || startRequested);
+  }
+
+  function noteBytes(receivedBytes: number): void {
+    const at = Date.now();
+    now = at;
+    if (marks.length === 0 && receivedBytes > 0) continued = true;
+    const last = marks[marks.length - 1];
+    if (last && last.received === receivedBytes) return;
+    const next = [...marks, { at, received: receivedBytes }];
+    marks = next.length > 40 ? next.slice(-40) : next;
+  }
+
+  function chooseStore(choice: ModelStorageChoiceValue) {
+    storeTouched = true;
+    pickError = null;
+    storeChoice = choice;
+  }
+
+  type FirefoxFolderPickOutcome = 'cancelled' | 'copied' | 'needs-download';
+
+  function cancelFolderCopy(): void {
+    copyController?.abort();
+  }
+
+  async function copyFromFirefoxFolder(): Promise<FirefoxFolderPickOutcome> {
+    // `pickDirectoryFiles` clicks the input synchronously, inside the start click.
+    readingFolder = false;
+    let files: File[] | null;
+    try {
+      files = await pickDirectoryFiles(copyInput, window, {
+        onAwaitingFiles: () => {
+          readingFolder = true;
+        },
+      });
+    } finally {
+      readingFolder = false;
+    }
+    if (!files) return 'cancelled';
+    if (files.length === 0) {
+      pickError = t('modelStorageNoModels');
+      return 'needs-download';
+    }
+
+    copyingFolder = true;
+    copyController = new AbortController();
+    copyProgress = null;
+    pickError = null;
+    try {
+      const store = await OpfsModelFileStore.open();
+      const result = await copySharedFolderFilesToOpfs({
+        files,
+        store,
+        signal: copyController.signal,
+        onProgress: (item) => {
+          copyProgress = item;
+        },
+      });
+      if (result.discovered.length === 0) {
+        pickError = t('modelStorageNoModels');
+        return 'needs-download';
+      }
+      if (result.imported.length === 0) {
+        pickError =
+          result.failed.length > 0 ? t('modelStorageCopyFailed') : t('modelStorageNoModels');
+        return 'needs-download';
+      }
+      await requestModelFolderReload();
+      await requestEngineWarm();
+      const inspected = await requestModelInspect(DEFAULT_MODEL_ID);
+      if (inspected) applyStatus(inspected);
+      if (result.failed.length > 0) pickError = t('modelStorageSomeCopiesFailed');
+      firefoxCopyDone = true;
+      return 'copied';
+    } catch (copyError) {
+      if (isAbortError(copyError) || copyController?.signal.aborted) {
+        return 'cancelled';
+      }
+      pickError = t('modelStorageCopyFailed');
+      return 'needs-download';
+    } finally {
+      copyingFolder = false;
+      copyController = null;
+      copyProgress = null;
+      if (copyInput) copyInput.value = '';
+    }
+  }
+
+  async function start() {
+    if (phase === 'downloading' || copyingFolder || readingFolder) return;
+    if (startRequested && phase !== 'paused' && phase !== 'error') return;
+    failureDetail = null;
+    pickError = null;
+    const retryPick = Boolean(integrityAlert);
+    integrityAlert = null;
+
+    if (!storeTouched) {
+      if (pickerAvailable) {
+        const latest = await requestEngineStatus().catch(() => null);
+        if (latest?.sharedFolder) engineFolder = latest.sharedFolder;
+      }
+      storeChoice = defaultOnboardingStoreChoice(pickerAvailable);
+    }
+
+    let skipDownload = modelState === 'ready' || modelState === 'loaded';
+
+    if (!pickerAvailable && storeChoice === 'copy') {
+      if (firefoxCopyDone || skipDownload) {
+        storeChoice = 'browser';
+      } else {
+        const outcome = await copyFromFirefoxFolder();
+        if (outcome === 'cancelled') return;
+        storeChoice = 'browser';
+        skipDownload = modelState === 'ready' || modelState === 'loaded';
+      }
+    }
+
+    const downloadChoice: OnboardingStoreChoice = storeChoice === 'copy' ? 'browser' : storeChoice;
+    let pendingFolder: { handle: FileSystemDirectoryHandle; name: string } | null = null;
+    const keepExistingFolder =
+      pickerAvailable && storeChoice === 'folder' && engineFolder.configured && !retryPick;
+    let existingFolderGranted = true;
+
+    if (keepExistingFolder) {
+      // The start click can renew a grant whose tab/tab lifetime ended. Query first, so an
+      // already active folder does not open a prompt or reload the engine.
+      const access = await ensureStoredFolderPermission().catch(() => null);
+      existingFolderGranted = access?.status === 'granted';
+      if (existingFolderGranted && access?.changed) {
+        const next = await requestModelFolderReload();
+        if (next) engineFolder = next;
+      }
+    }
+
+    if (pickerAvailable && storeChoice === 'folder' && !keepExistingFolder) {
+      const prepared = await preparePickedSharedFolder();
+      if (prepared.status === 'granted') {
+        pendingFolder = { handle: prepared.handle, name: prepared.name };
+        resolvedFolderName = prepared.name;
+      }
+      const plan = planOnboardingDownload({
+        pickerAvailable: true,
+        choice: 'folder',
+        pick: prepared.status,
+        modelState: skipDownload ? 'ready' : modelState,
+        integrityFailed: false,
+      });
+      if (plan === 'stay') {
+        // The static picker hint is already on screen; a cancel must not add a second copy.
+        if (prepared.status === 'cancelled') return;
+        if (prepared.status === 'denied') pickError = t('modelFolderPermissionNeeded');
+        if (prepared.status === 'failed') pickError = t('modelFolderPickFailed');
+        return;
+      }
+    } else if (pickerAvailable && storeChoice === 'browser') {
+      resolvedFolderName = null;
+    }
+
+    startRequested = true;
+
+    const source = targetLanguage === 'en' ? 'ja' : 'en';
+    const pack = shouldPrepareTranslatorPack({
+      builtInTranslator: hasBuiltInTranslatorUi(),
+      modelState,
+      choice: downloadChoice,
+    })
+      ? prepareTranslatorPack(source, targetLanguage)
+      : null;
+    void pack?.catch(() => undefined);
+
+    try {
+      await saveSettings({
+        consent: {
+          license: 'plamo-community',
+          version: PLAMO_LICENSE_VERSION,
+          notice: PLAMO_NOTICE_VERSION,
+          acceptedAt: new Date().toISOString(),
+          ageNoticeShown: true,
+        },
+      });
+      consentSaved = true;
+      reconsent = false;
+    } catch {
+      phase = 'error';
+      startRequested = false;
+      return;
+    }
+
+    if (keepExistingFolder && !existingFolderGranted) {
+      const next = await requestEngineStatus().catch(() => null);
+      if (next?.sharedFolder) engineFolder = next.sharedFolder;
+      startRequested = false;
+      phase = 'consent';
+      return;
+    }
+
+    if (pickerAvailable && storeChoice === 'browser') {
+      // Match Settings: copy verified folder models into OPFS before dropping the handle.
+      // The host keeps the handle when the folder cannot be read or holds a bad file.
+      const transferred = await requestModelFolderToBrowser().catch(() => null);
+      if (!transferred) {
+        pickError = t('modelStorageCopyFailed');
+        startRequested = false;
+        phase = 'consent';
+        return;
+      }
+      engineFolder = transferred.folder;
+      if (transferred.folder.configured && transferred.folder.permission !== 'granted') {
+        startRequested = false;
+        phase = 'consent';
+        return;
+      }
+      const inspected = await requestModelInspect(DEFAULT_MODEL_ID);
+      skipDownload = Boolean(
+        inspected && (inspected.state === 'ready' || inspected.state === 'loaded'),
+      );
+      if (inspected) modelState = inspected.state;
+    }
+
+    if (pendingFolder) {
+      await persistSharedFolderHandle(pendingFolder.handle);
+      const folder = await requestModelFolderAdopt();
+      const issue = folder?.integrityIssues.find((item) => item.modelId === DEFAULT_MODEL_ID);
+      if (issue) {
+        await clearStoredSharedFolder();
+        await requestModelFolderReload();
+        integrityAlert = t(integrityMessageKey(issue.kind), [issue.file]);
+        startRequested = false;
+        phase = 'consent';
+        return;
+      }
+      if (folder) engineFolder = folder;
+      const inspected = await requestModelInspect(DEFAULT_MODEL_ID);
+      if (inspected && (inspected.state === 'ready' || inspected.state === 'loaded')) {
+        skipDownload = true;
+        modelState = inspected.state;
+      }
+    } else if (keepExistingFolder) {
+      const inspected = await requestModelInspect(DEFAULT_MODEL_ID);
+      if (inspected && (inspected.state === 'ready' || inspected.state === 'loaded')) {
+        skipDownload = true;
+        modelState = inspected.state;
+      }
+    }
+
+    const alreadyReady =
+      planOnboardingDownload({
+        pickerAvailable,
+        choice: downloadChoice,
+        ...(pendingFolder ? { pick: 'granted' as const } : {}),
+        modelState: skipDownload ? 'ready' : modelState,
+      }) === 'skip';
+
+    if (received > 0) continued = true;
+
+    if (alreadyReady) {
+      phase = 'ready';
+      return;
+    }
+
+    phase = 'downloading';
+    pollGeneration += 1;
+    pollFailures = 0;
+    lastProgressAt = Date.now();
+    const started = await requestModelDownload(DEFAULT_MODEL_ID);
+    if (!started) phase = 'error';
+  }
+
+  let lastProgressAt = 0;
+  let pollInFlight = false;
+  let pollGeneration = 0;
+  let pollFailures = 0;
+  let disposed = false;
+
+  async function syncDownloadStatus(force = false): Promise<void> {
+    if (disposed || pollInFlight || phase !== 'downloading') return;
+    if (
+      !force &&
+      !shouldPollOnboardingProgress({
+        phase,
+        now: Date.now(),
+        lastProgressAt,
+        inFlight: pollInFlight,
+        failures: pollFailures,
+      })
+    ) {
+      return;
+    }
+    const generation = pollGeneration;
+    pollInFlight = true;
+    try {
+      const status = await requestModelAttach(DEFAULT_MODEL_ID);
+      if (
+        !shouldApplyOnboardingPollResult({
+          disposed,
+          phase,
+          startedGeneration: generation,
+          currentGeneration: pollGeneration,
+        })
+      ) {
+        return;
+      }
+      if (status) {
+        pollFailures = 0;
+        lastProgressAt = Date.now();
+        applyStatus(status);
+      } else {
+        pollFailures += 1;
+        lastProgressAt = Date.now();
+      }
+    } catch {
+      if (!disposed && generation === pollGeneration) {
+        pollFailures += 1;
+        lastProgressAt = Date.now();
+      }
+    } finally {
+      pollInFlight = false;
+    }
+  }
+
+  async function pause() {
+    pollGeneration += 1;
+    pollFailures = 0;
+    phase = 'paused';
+    await requestModelCancel(DEFAULT_MODEL_ID);
+  }
+
+  async function trySample() {
+    tryFailed = false;
+    try {
+      const url = new URL(browser.runtime.getURL('/sample.html'));
+      url.searchParams.set('to', targetLanguage);
+      await browser.tabs.create({ url: url.toString() });
+    } catch {
+      tryFailed = true;
+    }
+  }
+
+  async function close() {
+    closing = true;
+    closeFailed = false;
+    try {
+      const tab = await browser.tabs.getCurrent();
+      if (tab?.id !== undefined) await browser.tabs.remove(tab.id);
+      else window.close();
+    } catch {
+      closeFailed = true;
+    } finally {
+      closing = false;
+    }
+  }
+
+  onMount(() => {
+    disposed = false;
+    const onMessage = (message: unknown) => {
+      if (!isModelProgressMessage(message)) return;
+      if (
+        !shouldApplyOnboardingPollResult({
+          disposed,
+          phase,
+          startedGeneration: pollGeneration,
+          currentGeneration: pollGeneration,
+        })
+      ) {
+        return;
+      }
+      if (message.status.id === DEFAULT_MODEL_ID) {
+        lastProgressAt = Date.now();
+        pollFailures = 0;
+      }
+      applyStatus(message.status);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void syncDownloadStatus(true);
+    };
+    browser.runtime.onMessage.addListener(onMessage);
+    document.addEventListener('visibilitychange', onVisibility);
+    const timer = setInterval(() => {
+      now = Date.now();
+      void syncDownloadStatus();
+    }, 1000);
+
+    void loadSettings()
+      .then((settings) => {
+        targetLanguage = settings.targetLanguage;
+        // A consent written under an earlier notice stays valid, but this user has not seen
+        // the clearer commercial summary. Showing it again does not invalidate the license,
+        // does not touch the stored model, and only asks for one more click.
+        reconsent = needsLicenseReconsent(settings);
+        const stored = agreementFromStorage(settings.consent !== null, {
+          started: startRequested,
+        });
+        if (stored === null) return;
+        consentSaved = stored && !reconsent;
+      })
+      .catch(() => undefined)
+      .then(() => requestEngineStatus())
+      .then((status) => {
+        if (!status?.sharedFolder) return;
+        engineFolder = status.sharedFolder;
+        if (!storeTouched && !startRequested) {
+          storeChoice = defaultOnboardingStoreChoice(pickerAvailable);
+        }
+        if (status.sharedFolder.configured && status.sharedFolder.name) {
+          resolvedFolderName = status.sharedFolder.name;
+        }
+      })
+      .catch(() => undefined)
+      .then(() => requestModelInspect(DEFAULT_MODEL_ID))
+      .then((status) => {
+        if (status) applyStatus(status);
+      })
+      .catch(() => undefined);
+
+    void requestShortcutSnapshot().then((state) => {
+      if (!state) return;
+      const next = { ...bound };
+      for (const command of SHORTCUT_COMMANDS) {
+        next[command] = boundShortcut(state.snapshot, command);
+      }
+      bound = next;
+    });
+
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      browser.runtime.onMessage.removeListener(onMessage);
+    };
+  });
+</script>
+
+<main class="onboarding">
+  <header class="hero">
+    <img src="/icon/128.png" alt="" width="64" height="64" />
+    <p class="eyebrow">{t('onboardingEyebrow')}</p>
+    <h1>{t('extensionName')}</h1>
+    <p class="lead">{t('onboardingLead')}</p>
+  </header>
+
+  {#if phase !== 'ready'}
+    <section class="panel notes">
+      <h2>{t('onboardingSetupHeading')}</h2>
+      <ul>
+        <li>{t('onboardingModelNote')}</li>
+        <li>{tForBrowser('onboardingBridgeNote', 'onboardingBridgeNoteFirefox')}</li>
+        {#if hasBuiltInTranslatorUi()}
+          <li>{t('onboardingUseNow')}</li>
+        {/if}
+        <li>{t('onboardingPrivacyNote')}</li>
+        <li>{t('onboardingLocalServerNote')}</li>
+      </ul>
+    </section>
+  {/if}
+
+  {#if phase === 'ready'}
+    <section class="panel ready" aria-live="polite">
+      <h2 class="ready-title">{t('onboardingReadyHeading')}</h2>
+      <p>{t('onboardingReadyLead')}</p>
+      <ul>
+        <li>{t('onboardingReadyToolbar')}</li>
+        <li>{readyPage}</li>
+        <li>{readySelection}</li>
+        <li>{readyCompose}</li>
+        <li>{t('onboardingReadyContext')}</li>
+      </ul>
+    </section>
+  {:else if phase !== 'consent'}
+    <section class="panel progress" aria-live="polite">
+      <div
+        class="track"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={percent}
+        aria-label={t('downloadProgressLabel')}
+      >
+        <span style="width: {percent}%"></span>
+      </div>
+      <p>{statusText}</p>
+      {#if etaLabel}
+        <p>{etaLabel}</p>
+      {/if}
+      {#if phase === 'paused'}
+        <p>{t('downloadPaused')}</p>
+      {:else if continued && phase === 'downloading'}
+        <p>{t('downloadResuming')}</p>
+      {/if}
+      {#if phase === 'downloading' || phase === 'paused'}
+        <p>{t('onboardingWhileDownloading')}</p>
+      {:else if phase === 'error'}
+        <p class="error" role="alert">{failureText}</p>
+      {/if}
+    </section>
+  {/if}
+
+  <div class="actions">
+    {#if showStartNotice}
+      <section class="panel consent" aria-labelledby="commercial-heading">
+        <h2 id="commercial-heading">{t('onboardingCommercialHeading')}</h2>
+
+        {#if reconsent}
+          <p class="reconsent">{t('onboardingReconsentHeading')}</p>
+          <p class="muted">{t('onboardingReconsentBody')}</p>
+        {/if}
+
+        <div class="terms">
+          <div>
+            <h3>{t('onboardingPersonalHeading')}</h3>
+            <p>{t('onboardingPersonalBody')}</p>
+          </div>
+          <div>
+            <h3>{t('onboardingCommercialHeading2')}</h3>
+            <p>{t('onboardingCommercialBody')}</p>
+            <ul class="conditions">
+              <li>{t('onboardingCommercialRegistration')}</li>
+              <li>{t('onboardingCommercialRevenue')}</li>
+            </ul>
+          </div>
+          <div>
+            <h3>{t('onboardingCommercialUnmetHeading')}</h3>
+            <p>{t('onboardingCommercialUnmetBody')}</p>
+          </div>
+        </div>
+
+        <p class="age">{t('onboardingAgeNotice')}</p>
+
+        <p class="consent-links">
+          <a href={officialLinks.licenseJa} target="_blank" rel="noreferrer"
+            >{t('plamoOfficialLicenseJa')}</a
+          >
+          <a href={officialLinks.registration} target="_blank" rel="noreferrer"
+            >{t('plamoRegistrationLink')}</a
+          >
+        </p>
+
+        <!--
+          Everything else stays reachable without repeating a wall of the same links above:
+          the English official text, both bundled copies, this code's MIT license and NOTICE.
+        -->
+        <details class="more">
+          <summary>{t('onboardingOtherLicenses')}</summary>
+          <ul class="consent-links">
+            <li>
+              <a href={officialLinks.licenseEn} target="_blank" rel="noreferrer"
+                >{t('plamoOfficialLicenseEn')}</a
+              >
+            </li>
+            <li>
+              <a href={licenseLinks.plamoJa} target="_blank" rel="noreferrer"
+                >{t('licensePlaMoJa')}</a
+              >
+            </li>
+            <li>
+              <a href={licenseLinks.plamoEn} target="_blank" rel="noreferrer"
+                >{t('licensePlaMoEn')}</a
+              >
+            </li>
+            <li>
+              <a href={licenseLinks.mit} target="_blank" rel="noreferrer">{t('licenseMit')}</a>
+            </li>
+            <li>
+              <a href={licenseLinks.notice} target="_blank" rel="noreferrer">{t('licenseNotice')}</a
+              >
+            </li>
+            <li>
+              <a href={projectLinks.privacy} target="_blank" rel="noreferrer"
+                >{t('privacyPolicyLink')}</a
+              >
+            </li>
+            <li>
+              <a href={projectLinks.source} target="_blank" rel="noreferrer"
+                >{t('sourceCodeLink')}</a
+              >
+            </li>
+          </ul>
+        </details>
+      </section>
+      {#if showBrowserOnly}
+        <div class="storage-browser-only">
+          <h3 class="storage-heading">{t('modelStorageLegend')}</h3>
+          <p class="muted">{t('modelStorageBrowserOnlyHint')}</p>
+          {#if braveBrowser}
+            <p class="muted">{t('modelStorageBraveEnableFsaHint')}</p>
+          {/if}
+        </div>
+      {:else if pickerAvailable || !sharedFolderSupported()}
+        <ModelStorageChoice
+          choice={storeChoice}
+          mode={pickerAvailable ? 'folder' : 'copy'}
+          legendKey="onboardingStoreLegend"
+          folderKey={pickerAvailable ? 'onboardingStoreFolder' : 'modelStorageCopyFolder'}
+          browserKey="onboardingStoreBrowser"
+          recommended={pickerAvailable ? 'folder' : 'copy'}
+          notes={storeChoice === (pickerAvailable ? 'folder' : 'copy')
+            ? pickerAvailable
+              ? chromiumNotes
+              : firefoxNotes
+            : []}
+          benefits={storageBenefits}
+          disabled={copyingFolder || readingFolder}
+          onChoose={(choice) => void chooseStore(choice)}
+        />
+        {#if !pickerAvailable}
+          <input
+            bind:this={copyInput}
+            class="hidden"
+            type="file"
+            accept=".gguf"
+            webkitdirectory
+            multiple
+          />
+        {/if}
+        {#if readingFolder && !copyingFolder}
+          <div class="storage-progress" role="status">
+            <p class="muted">{t('modelFolderReading')}</p>
+          </div>
+        {/if}
+        {#if copyingFolder}
+          <div class="storage-progress" role="status">
+            {#if copyProgress}
+              <div
+                class="track"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={Math.round(copyProgress.transfer.ratio * 100)}
+                aria-label={t('modelStorageProgressLabel')}
+              >
+                <span style="width: {copyProgress.transfer.ratio * 100}%"></span>
+              </div>
+              <p class="muted">
+                {copyProgress.transfer.phase === 'verify'
+                  ? t('modelVerifying')
+                  : `${formatByteSize(copyProgress.transfer.received)} / ${formatByteSize(copyProgress.transfer.total)}`}
+              </p>
+            {:else}
+              <p class="muted">{t('modelStorageWorking')}</p>
+            {/if}
+            <button class="button secondary" type="button" onclick={cancelFolderCopy}>
+              {t('downloadCancel')}
+            </button>
+          </div>
+        {/if}
+      {/if}
+      {#if integrityAlert}
+        <p class="error" role="alert">{integrityAlert}</p>
+      {/if}
+      {#if pickError}
+        <p class="error" role="alert">{pickError}</p>
+      {/if}
+      <p id="start-notice" class="start-note">{t('onboardingConsentSentence')}</p>
+    {/if}
+    {#if folderBlocked}
+      <FolderPermissionRestore
+        folder={engineFolder}
+        modelId={DEFAULT_MODEL_ID}
+        warm={consentSaved}
+        onRestored={async () => {
+          const next = await requestEngineStatus();
+          if (next?.sharedFolder) engineFolder = next.sharedFolder;
+          const inspected = await requestModelInspect(DEFAULT_MODEL_ID);
+          if (inspected) applyStatus(inspected);
+        }}
+      />
+    {/if}
+    {#if resolvedFolderName}
+      <p class="muted start-note" role="status">{t('modelFolderUsing', [resolvedFolderName])}</p>
+    {/if}
+    <div class="action-row">
+      {#if showTryButton}
+        <button class="button" type="button" onclick={trySample}>{t('onboardingTry')}</button>
+      {/if}
+      {#if phase === 'downloading'}
+        <button class="button secondary" type="button" onclick={pause}>{t('downloadCancel')}</button
+        >
+      {:else if showStartButton}
+        <button
+          class="button"
+          type="button"
+          onclick={start}
+          disabled={closing || copyingFolder || readingFolder}
+          aria-describedby={showStartNotice ? 'start-notice' : undefined}
+        >
+          {consentSaved
+            ? t('downloadResume')
+            : reconsent
+              ? t('onboardingReconsentStart')
+              : t('onboardingStart')}
+        </button>
+      {/if}
+      <button class="button secondary" type="button" onclick={close} disabled={closing}>
+        {t('onboardingClose')}
+      </button>
+    </div>
+  </div>
+  {#if closeFailed || tryFailed}
+    <p class="error" role="alert">{t('errorAction')}</p>
+  {/if}
+
+  <footer class="footer">
+    <p class="notice">{t('unofficialNotice')}</p>
+  </footer>
+</main>
+
+<style>
+  .storage-browser-only {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .storage-heading {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  .onboarding {
+    display: grid;
+    gap: var(--space-4);
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 56px var(--space-5) var(--space-6);
+  }
+
+  .hero {
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
+  }
+
+  .hero img {
+    border-radius: 16px;
+    margin-bottom: var(--space-2);
+  }
+
+  .eyebrow {
+    color: var(--accent-strong);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 26px;
+    line-height: 1.25;
+  }
+
+  .lead {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  h2 {
+    margin-bottom: var(--space-3);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .ready {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  }
+
+  .ready-title {
+    margin-bottom: var(--space-2);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.35;
+    text-transform: none;
+    color: var(--text);
+  }
+
+  .ready ul {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  .ready li {
+    position: relative;
+    padding-left: 16px;
+  }
+
+  .ready li::before {
+    content: '';
+    position: absolute;
+    top: 0.68em;
+    left: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .notes ul {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+
+  .notes li {
+    position: relative;
+    padding-left: 16px;
+  }
+
+  .notes li::before {
+    content: '';
+    position: absolute;
+    top: 0.68em;
+    left: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .track {
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--surface-muted);
+  }
+
+  .track > span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+
+  .progress {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .actions {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .start-note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  .storage-progress {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .storage-progress p {
+    margin: 0;
+  }
+
+  .consent {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  }
+
+  .consent .terms {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .consent h3 {
+    margin: 0 0 var(--space-1);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text);
+  }
+
+  .consent .conditions {
+    display: grid;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    padding-left: 18px;
+    list-style: disc;
+    font-size: 13px;
+  }
+
+  .consent .age {
+    margin-top: var(--space-3);
+    font-size: 13px;
+  }
+
+  .reconsent {
+    margin-bottom: var(--space-1);
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .more {
+    margin-top: var(--space-2);
+    font-size: 13px;
+  }
+
+  .more > summary {
+    cursor: pointer;
+    color: var(--accent-strong);
+    font-weight: 600;
+  }
+
+  .more ul {
+    margin-top: var(--space-2);
+  }
+
+  .consent-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-3);
+    font-size: 13px;
+  }
+
+  .action-row {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
+  }
+
+  .action-row .button {
+    min-width: 112px;
+  }
+
+  .footer {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .track > span {
+      transition: none;
+    }
+  }
+</style>

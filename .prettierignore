@@ -1,0 +1,16 @@
+.output
+.wxt
+node_modules
+pnpm-lock.yaml
+public/icon
+public/licenses
+public/vendor
+vendor
+scripts/icon.svg
+scripts/bench/fixtures/
+coverage
+test-results
+playwright-report
+.orchestrator
+
+src/engine/model/sha256.wasm.c

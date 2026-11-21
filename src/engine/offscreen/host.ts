@@ -1,0 +1,1754 @@
+import { browser, type Browser } from 'wxt/browser';
+import {
+  bindPortDisconnectCleanup,
+  postPortMessage,
+  scheduleRuntimeLastErrorClear,
+} from '@/shared/runtime-last-error';
+import { hasLicenseConsent } from '@/shared/agreement';
+import {
+  isHardWebGpuFailure,
+  lastGpuDiagnostic,
+  lastWebGpuAdapterInfo,
+  probeCapabilities,
+  resetCapabilityProbe,
+} from '@/shared/capabilities';
+import { mergeGpuDiagnostic, type GpuDiagnostic } from '@/shared/gpu-diagnostic';
+import {
+  canonicalLanguage,
+  isPlamoOnlyTarget,
+  JA_EASY_TARGET,
+  plamoPromptTargetLanguage,
+  type TargetLanguage,
+} from '@/shared/languages';
+import {
+  modelCanTranslate,
+  type EngineSource,
+  type EngineStatus,
+  type GpuFallbackReason,
+  type ModelStatus,
+} from '@/shared/engine-status';
+import { advanceModelStatus } from '@/shared/model-progress';
+import { loadSettings, saveSettings } from '@/shared/storage';
+import type { Formality, IdleMinutes, Settings, TierPreference } from '@/shared/settings';
+import { MemoryTranslationCacheStore, IndexedDbTranslationCacheStore } from '../cache/store';
+import { CachingEngine, type CacheAccept } from '../cache/caching-engine';
+import { TranslationCache } from '../cache/cache';
+import { prewarmRequest } from '../cache/prewarm';
+import { ChromeTranslatorEngine } from '../chrome/translator';
+import {
+  EngineError,
+  abortError,
+  folderPermissionError,
+  isAbortError,
+  isEngineError,
+  modelChangedError,
+} from '../errors';
+import {
+  cpuFallback,
+  isGpuLoadFallback,
+  lighterSelection,
+  selectionAfterGpuLoss,
+  selectionForTier,
+  type BackendSelection,
+} from '../in-browser/backend';
+import { InBrowserEngine } from '../in-browser/engine';
+import { LazyInBrowserEngine } from '../in-browser/lazy-engine';
+import {
+  WEBGPU_LOAD_MAX_MS,
+  createWllamaRuntime,
+  lastWebGpuLoadLog,
+  type LlamaRuntime,
+} from '../in-browser/runtime';
+import { localServerConfigFromSettings, type LocalServerConfig } from '../local-server/client';
+import { LocalServerRuntime } from '../local-server/runtime';
+import { PlamoSourceEngine } from '../local-server/source';
+import { JobScheduler } from '../queue/scheduler';
+import { DEFAULT_MODEL_ID, SELECTABLE_MODEL_IDS, getModel, type ModelId } from '../model/catalog';
+import { normalizeSelectedModelId, resolveActiveModel } from '../model/selection';
+import {
+  canDeleteBrowserCopy,
+  emptySharedFolderStatus,
+  sharedFolderNeedsPermission,
+  type SharedFolderStatus,
+} from '../model/folder-status';
+import { FOLDER_PERMISSION_ERROR, isFolderAccessError } from '../model/folder-permission';
+import { SharedFolderSession } from '../model/folder-session';
+import { OpfsModelFileStore } from '../model/file-store';
+import { ModelManager, type LoadedModel } from '../model/manager';
+import { clearStoredSharedFolder } from '../model/shared-folder';
+import type { DownloadProgress } from '../model/download';
+import { QUALITY_PARAGRAPH } from '../model/suggestion';
+import { buildTranslationPrompt, cleanModelOutput } from '../prompt/pfml3';
+import { isBrokenTranslation } from '../text/degenerate';
+import { CpuRetryRuntimeSlot } from './retry-runtime';
+import { translationStaysInSourceLanguage } from '@/pdf/language';
+import { RoutingEngine, type PairSupport } from '../router';
+import type { GlossaryEntry } from '../types';
+import {
+  ENGINE_HOST_PORT,
+  MODEL_STATUS_PROGRESS_ID,
+  deserializeTranslateOptions,
+  errorPayload,
+  isEngineHostRequest,
+  type BenchmarkRequest,
+  type CacheClearRequest,
+  type EngineHostMessage,
+  type FolderAdoptRequest,
+  type FolderDeleteOpfsRequest,
+  type FolderReloadRequest,
+  type FolderToBrowserRequest,
+  type ModelDeleteRequest,
+  type ModelDownloadRequest,
+  type ModelSetRequest,
+  type ModelStatusRequest,
+  type RuntimeSetRequest,
+  type SourceSetRequest,
+  type TierSetRequest,
+  type TranslateRequest,
+} from './protocol';
+
+const IDLE_RELEASE_MS = 5 * 60 * 1000;
+const WARMUP_TIMEOUT_MS = 20_000;
+/**
+ * Last-resort bound around one WebGPU load attempt. The runtime itself terminates a wedged
+ * worker sooner; this keeps `loadWithFallback` from waiting forever if any other layer stalls.
+ */
+const WEBGPU_LOAD_WATCHDOG_MS = WEBGPU_LOAD_MAX_MS + 30_000;
+/**
+ * Extra CPU wllama copy used to retry a collapsed WebGPU piece. About +0.6GB.
+ * Kept only while a page is still translating, then dropped so a healthy GPU
+ * session does not pin two model copies for the full `idleMinutes`. Reloading
+ * it on a later hit costs a few seconds; reusing the loaded CPU runtime avoids
+ * the copy entirely.
+ */
+export const RETRY_RUNTIME_IDLE_MS = 60_000;
+
+interface RuntimePrefs {
+  idleMinutes: IdleMinutes;
+  tier: TierPreference;
+  targetLanguage: TargetLanguage;
+  form: Formality;
+  glossary: GlossaryEntry[];
+  consented: boolean;
+}
+
+function idleHoldMs(minutes: IdleMinutes): number {
+  return minutes === 0 ? 0 : minutes * 60_000;
+}
+
+export { canReuseLoadedRuntimeForRetry } from './retry-runtime';
+
+export interface EngineServices {
+  manager: ModelManager;
+  router: RoutingEngine;
+  chrome: ChromeTranslatorEngine;
+  lazy: LazyInBrowserEngine;
+  /** Loads the active model, dropping to the CPU tier when the GPU cannot take it. */
+  load: (signal: AbortSignal) => Promise<LoadedModel>;
+  readonly selection: BackendSelection;
+  clearCache: () => Promise<void>;
+  setTier: (tier: TierPreference) => Promise<void>;
+  disposeRetryRuntime?: () => Promise<void>;
+  /** Session-wide leave of WebGPU after a lost device or a collapsed warm-up. */
+  leaveWebGpu?: (reason: 'lost' | 'degenerate') => Promise<void>;
+}
+
+export interface EngineHostOptions {
+  idleReleaseMs?: number;
+  createServices?: () => Promise<EngineServices>;
+}
+
+/**
+ * A missing folder grant only blocks a load when no verified copy can answer. The fallback
+ * snapshot points the manager at OPFS while the folder needs permission, and a folder
+ * primary may still have the retained OPFS copy beside it.
+ */
+export async function sharedFolderAllowsModelLoad(
+  folder: SharedFolderStatus | undefined,
+  manager: Pick<ModelManager, 'hasReadableCopy'>,
+  modelId: ModelId,
+): Promise<boolean> {
+  if (!sharedFolderNeedsPermission(folder)) return true;
+  return manager.hasReadableCopy(modelId);
+}
+
+/**
+ * Keep an in-progress transfer or load visible. Only a model that has no usable file and is
+ * not already being fetched/verified/read becomes the one-click folder-permission error.
+ */
+export function modelStatusForSharedFolder(
+  model: ModelStatus,
+  folder: SharedFolderStatus | undefined,
+): ModelStatus {
+  if (!sharedFolderNeedsPermission(folder)) return model;
+  if (modelCanTranslate(model)) return model;
+  if (model.state === 'loading' || model.state === 'downloading' || model.state === 'verifying') {
+    return model;
+  }
+  return { ...model, state: 'error', error: FOLDER_PERMISSION_ERROR };
+}
+
+interface HostRequest {
+  controller: AbortController;
+  port: Browser.runtime.Port | null;
+  kind: 'translate' | 'download' | 'warm';
+  modelId?: ModelId;
+}
+
+interface ActiveDownload {
+  modelId: ModelId;
+  controller: AbortController;
+  operation: Promise<ModelStatus>;
+  attachments: Map<string, Browser.runtime.Port>;
+  status: ModelStatus | null;
+}
+
+async function openCache(): Promise<TranslationCache> {
+  try {
+    return new TranslationCache(await IndexedDbTranslationCacheStore.open());
+  } catch {
+    return new TranslationCache(new MemoryTranslationCacheStore());
+  }
+}
+
+export async function warmup(
+  runtime: LlamaRuntime,
+  tgt: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WARMUP_TIMEOUT_MS);
+  const onAbort = (): void => controller.abort();
+  signal?.addEventListener('abort', onAbort);
+  let output = '';
+
+  try {
+    if (signal?.aborted) throw abortError();
+    const language = plamoPromptTargetLanguage(tgt);
+    const japanese = language === 'ja' || language === JA_EASY_TARGET;
+    const result = await runtime.complete({
+      prompt: buildTranslationPrompt({
+        text: 'Hello.',
+        src: japanese ? 'en' : 'ja',
+        tgt: language,
+        ...(japanese ? { form: 'polite' } : {}),
+      }),
+      maxTokens: 16,
+      signal: controller.signal,
+      onToken: (token) => {
+        output += token;
+      },
+    });
+    const hitMaxTokens = result?.hitMaxTokens === true;
+    const broken =
+      isBrokenTranslation('Hello.', output, hitMaxTokens) ||
+      isBrokenTranslation('Hello.', cleanModelOutput(output), hitMaxTokens);
+    if (broken) {
+      throw new EngineError(
+        runtime.backend === 'webgpu' ? 'gpu-unavailable' : 'model-load-failed',
+        'The model repeated one token during warm-up.',
+        { detail: 'degenerate warmup', retryable: runtime.backend === 'webgpu' },
+      );
+    }
+  } catch (error) {
+    if (signal?.aborted) throw abortError();
+    // The timer gave up. Translation still runs, and a repeated token there is rejected.
+    if (isAbortError(error)) return;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+function isDegenerateWarmup(error: unknown): boolean {
+  return isEngineError(error) && error.detail === 'degenerate warmup';
+}
+
+function errorText(error: unknown): string {
+  if (isEngineError(error)) return `${error.detail ?? ''}\n${error.message}`;
+  return error instanceof Error ? error.message : String(error);
+}
+
+const OUTPUT_FALLBACK_PATTERN =
+  /correctness probe failed|degenerate (?:warmup|output)|collapsed|broken output|garbled|repeated (?:one )?token/iu;
+/**
+ * No adapter at all, e.g. right after a GPU driver update while Chrome is still running. That
+ * answer is fixed by a full browser restart, so it gets its own label; a device that existed
+ * but failed keeps `device`.
+ */
+const ADAPTER_FALLBACK_PATTERN =
+  /Failed to get an adapter|no adapter after high-performance, default, and low-power|requestAdapter(?:\(\))? returned null|no available adapters/iu;
+const DEVICE_FALLBACK_PATTERN =
+  /requestAdapter|adapter lacks shader-f16|no adapter with shader-f16|Failed to get a device|giving up on WebGPU|Error while parsing WGSL|extension 'subgroups' is not allowed|WebGPU backend disabled|gpu-lost|GPU stopped working|device lost|navigator\.gpu is missing|no GPU/iu;
+
+/** Which part of WebGPU failed, so the CPU fallback label can name it honestly. */
+export function gpuFallbackReasonForError(error: unknown): GpuFallbackReason {
+  const text = errorText(error);
+  if (OUTPUT_FALLBACK_PATTERN.test(text)) return 'output';
+  if (ADAPTER_FALLBACK_PATTERN.test(text)) return 'adapter';
+  if (DEVICE_FALLBACK_PATTERN.test(text)) return 'device';
+  return 'load';
+}
+
+/**
+ * Adapter/device/WGSL failures will not be fixed by asking for fewer slots; skip straight
+ * to CPU so the model is not loaded and discarded twice (10–24 s on a failed GPU path).
+ */
+export function skipRemainingWebGpuAttempts(error: unknown): boolean {
+  if (!isEngineError(error)) return false;
+  if (error.code === 'gpu-unavailable') return true;
+  const text = `${error.detail ?? ''}\n${error.message}`;
+  return /Failed to get an adapter|adapter lacks shader-f16|no adapter with shader-f16|Failed to get a device after retries|giving up on WebGPU|Error while parsing WGSL|extension 'subgroups' is not allowed|correctness probe failed|WebGPU backend disabled/iu.test(
+    text,
+  );
+}
+
+export interface LoadFallbackOptions {
+  /** Test seam; production uses the bound that lets the runtime terminate a wedged worker. */
+  webgpuTimeoutMs?: number;
+}
+
+function gpuLoadWatchdogError(timeoutMs: number): EngineError {
+  return new EngineError('gpu-unavailable', 'The WebGPU model load did not finish in time.', {
+    detail: `WebGPU model load watchdog expired after ${String(Math.round(timeoutMs / 1000))}s`,
+  });
+}
+
+async function withinTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(onTimeout()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Loads on the current selection and, when a GPU load fails for any reason but an abort, steps
+ * down to fewer slots, then one conservative WebGPU slot, then the CPU. A missing adapter,
+ * a device that failed after ggml retries, or a WGSL compile error skips the narrower loads.
+ * Translation and warm-up both come through here, so neither can leave the engine without a
+ * model just because WebGPU would not take it.
+ *
+ * A WebGPU attempt that never settles is treated as `gpu-unavailable`, so it goes straight to
+ * the CPU rather than retrying the narrower GPU shapes that would hang the same way.
+ */
+export async function loadWithFallback(
+  ensureLoaded: (selection: BackendSelection) => Promise<LoadedModel>,
+  selection: BackendSelection,
+  signal: AbortSignal,
+  options: LoadFallbackOptions = {},
+): Promise<{ loaded: LoadedModel; selection: BackendSelection }> {
+  const webgpuTimeoutMs = options.webgpuTimeoutMs ?? WEBGPU_LOAD_WATCHDOG_MS;
+  let current = selection;
+  for (;;) {
+    try {
+      const task = ensureLoaded(current);
+      const loaded =
+        current.backend === 'webgpu'
+          ? await withinTimeout(task, webgpuTimeoutMs, () => gpuLoadWatchdogError(webgpuTimeoutMs))
+          : await task;
+      return { loaded, selection: current };
+    } catch (error) {
+      if (isAbortError(error) || signal.aborted) throw error;
+      const next = skipRemainingWebGpuAttempts(error)
+        ? cpuFallback(current)
+        : lighterSelection(current);
+      if (!next) throw error;
+      current = next;
+    }
+  }
+}
+
+export class EngineHost {
+  private readonly idleReleaseMs: number;
+  private readonly openServices: () => Promise<EngineServices>;
+  private servicesTask: Promise<EngineServices> | null = null;
+  private readonly requests = new Map<string, HostRequest>();
+  private readonly downloads = new Map<ModelId, ActiveDownload>();
+  private readonly ports = new Set<Browser.runtime.Port>();
+  private activeModelId: ModelId = DEFAULT_MODEL_ID;
+  /** Set by `model-set` before services exist, so the first restore uses the saved id. */
+  private preferredModelId: ModelId | null = null;
+  /** Present only when this document can read `chrome.storage` (Firefox's engine frame). */
+  private storedModelId: ModelId | null = null;
+  private runtimePrefs: RuntimePrefs | null = null;
+  private selectionChain: Promise<void> = Promise.resolve();
+  private modelFallback = false;
+  private plamoReady = false;
+  private warming = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleGeneration = 0;
+  private retryIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  private benchmark: AbortController | null = null;
+  private prewarmKey: string | null = null;
+  /** Resolves when an in-flight model switch has published the new id and finished unload. */
+  private switchTask: Promise<void> = Promise.resolve();
+  /** The probe offered WebGPU but the model could not be placed on it. */
+  private gpuFallback = false;
+  private gpuFallbackReason: GpuFallbackReason | null = null;
+  private gpuDiagnostic: GpuDiagnostic | null = null;
+  private engineSource: EngineSource = 'in-browser';
+  private localConfig: LocalServerConfig = localServerConfigFromSettings(null);
+  private localScheduler: JobScheduler | null = null;
+  private folderSession: SharedFolderSession | null = null;
+
+  constructor(options: EngineHostOptions = {}) {
+    this.idleReleaseMs = options.idleReleaseMs ?? IDLE_RELEASE_MS;
+    this.openServices = options.createServices ?? (() => this.createServices());
+
+    if (browser.storage?.onChanged) {
+      browser.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.settings) {
+          void this.onSettingsChanged();
+        }
+      });
+    }
+  }
+
+  handlePort(port: Browser.runtime.Port): void {
+    if (port.name !== ENGINE_HOST_PORT) {
+      bindPortDisconnectCleanup(port);
+      return;
+    }
+    if (port.sender?.id !== browser.runtime.id) {
+      bindPortDisconnectCleanup(port);
+      return;
+    }
+    if (port.sender?.tab) {
+      bindPortDisconnectCleanup(port);
+      return;
+    }
+
+    this.ports.add(port);
+    port.onMessage.addListener((message: unknown) => {
+      void this.handleMessage(port, message).catch(() => undefined);
+    });
+
+    bindPortDisconnectCleanup(port, () => {
+      this.ports.delete(port);
+      this.detachPort(port);
+    });
+  }
+
+  async status(): Promise<EngineStatus> {
+    const services = await this.services();
+    return this.statusOf(services);
+  }
+
+  private services(): Promise<EngineServices> {
+    if (!this.servicesTask) {
+      const task = this.openServices()
+        .then(async (services) => {
+          await this.restorePreferred(services);
+          return services;
+        })
+        .catch((error: unknown) => {
+          if (this.servicesTask === task) this.servicesTask = null;
+          throw error;
+        });
+      this.servicesTask = task;
+    }
+
+    return this.servicesTask;
+  }
+
+  private noteGpuError(error: unknown): GpuFallbackReason {
+    const detail = errorText(error);
+    this.gpuDiagnostic = mergeGpuDiagnostic(
+      this.gpuDiagnostic ?? lastGpuDiagnostic(),
+      detail,
+      lastWebGpuLoadLog(),
+    );
+    return gpuFallbackReasonForError(error);
+  }
+
+  private markGpuFallback(reason: GpuFallbackReason): void {
+    this.gpuFallback = true;
+    this.gpuFallbackReason = reason;
+  }
+
+  /**
+   * Publish load transitions on every open engine port so the popup and content scripts
+   * refresh their status instead of keeping a stale "waiting" label. Download progress
+   * keeps its request-scoped event from `runDownload`.
+   */
+  private publishModelStatus(status: ModelStatus): void {
+    if (status.state === 'downloading' || status.state === 'verifying') return;
+    for (const port of this.ports) {
+      this.post(port, {
+        type: 'model-progress',
+        requestId: MODEL_STATUS_PROGRESS_ID,
+        status,
+      });
+    }
+  }
+
+  private async createServices(): Promise<EngineServices> {
+    const capabilities = await probeCapabilities();
+    this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), null);
+    const gpuProbeTimedOut =
+      capabilities.webgpu === 'unavailable' && /timed out/i.test(this.gpuDiagnostic?.error ?? '');
+    const probe = {
+      webgpu: capabilities.webgpu === 'ready',
+      hardwareConcurrency: capabilities.hardwareConcurrency,
+      fastBatches: capabilities.gpuFastBatches === true,
+      sharedMemory: capabilities.crossOriginIsolated,
+    };
+    const stored = browser.storage?.local ? await loadSettings().catch(() => null) : null;
+    // Chrome's offscreen document has no chrome.storage. The service worker pushes
+    // engineSource, the selected model, and the idle/prewarm snapshot. A record read
+    // here only exists where storage is actually available (Firefox's engine frame).
+    if (stored) this.applyStoredSettings(stored);
+    this.storedModelId = stored ? normalizeSelectedModelId(stored.selectedModelId) : null;
+    const tier = stored?.tier ?? this.runtimePrefs?.tier ?? 'auto';
+    if (gpuProbeTimedOut && (tier === 'auto' || tier === 'g')) {
+      // The probe could not get an adapter before the GPU load. Show why Auto is on the CPU
+      // instead of silently doing that; a manual CPU tier is not a WebGPU fallback.
+      this.markGpuFallback(gpuFallbackReasonForError(this.gpuDiagnostic?.error ?? ''));
+    }
+    const selection = selectionForTier(tier, probe);
+    const selectionState = { current: selection };
+    // A soft negative probe (empty iframe, transient timeout) must not stay cached through
+    // the first GPU load. Hard failures (no navigator.gpu, confirmed no f16) stay cached.
+    const firstProbeCanRetry = !isHardWebGpuFailure(lastWebGpuAdapterInfo());
+    const autoOrGpu = tier === 'auto' || tier === 'g';
+    let probeResetForLoad = false;
+    const store = await OpfsModelFileStore.open();
+    const manager = new ModelManager({
+      store,
+      createRuntime: createWllamaRuntime,
+      onStatus: (status) => this.publishModelStatus(status),
+    });
+    this.folderSession = new SharedFolderSession(store, manager);
+    try {
+      await this.folderSession.apply();
+    } catch {
+      manager.setStores(store);
+    }
+    const cache = await openCache();
+    const chrome = new ChromeTranslatorEngine();
+    const load = async (signal: AbortSignal): Promise<LoadedModel> => {
+      if (
+        !(await sharedFolderAllowsModelLoad(
+          this.folderSession?.status(),
+          manager,
+          this.activeModelId,
+        ))
+      ) {
+        throw folderPermissionError();
+      }
+      if (
+        !probeResetForLoad &&
+        autoOrGpu &&
+        selectionState.current.backend === 'webgpu' &&
+        firstProbeCanRetry
+      ) {
+        // Keep the diagnostic captured above, but let a later capability read see the
+        // adapter again instead of reusing a stale soft probe result.
+        resetCapabilityProbe();
+        probeResetForLoad = true;
+      }
+      let lastGpuFailureReason: GpuFallbackReason = 'load';
+      const result = await loadWithFallback(
+        async (selection) => {
+          // Mark the fallback before the CPU load publishes `loaded`, so status already
+          // says why WebGPU was not used when the popup refreshes.
+          if (isGpuLoadFallback(selectionState.current, selection)) {
+            this.markGpuFallback(lastGpuFailureReason);
+          }
+          try {
+            // Warm-up is not run here. A Hello. completion before the first page
+            // changed parallel-slot batching and later greedy decoding (garbled
+            // p15 on the second translate of a session). Kernel collapse is
+            // caught on the first real piece and by handleWarm.
+            return await manager.ensureLoaded(this.activeModelId, selection, { signal });
+          } catch (error) {
+            if (isFolderAccessError(error)) {
+              await this.folderSession?.apply().catch(() => undefined);
+              throw folderPermissionError();
+            }
+            lastGpuFailureReason = this.noteGpuError(error);
+            throw error;
+          }
+        },
+        selectionState.current,
+        signal,
+      );
+      if (isGpuLoadFallback(selectionState.current, result.selection)) {
+        this.markGpuFallback(lastGpuFailureReason);
+      }
+      selectionState.current = result.selection;
+      this.gpuDiagnostic = mergeGpuDiagnostic(
+        lastGpuDiagnostic(),
+        this.gpuDiagnostic?.error,
+        lastWebGpuLoadLog(),
+      );
+
+      this.touch();
+      return result.loaded;
+    };
+    let lastGpuLossAt = Number.NEGATIVE_INFINITY;
+    const cpuRetry = new CpuRetryRuntimeSlot({
+      create: createWllamaRuntime,
+      modelBlob: (modelId) => manager.modelBlob(modelId),
+      activeModelId: () => this.activeModelId,
+      loaded: () => manager.loadedModel,
+      cpuSelection: () => cpuFallback(selectionState.current),
+    });
+    const disposeCpuRetry = async (): Promise<void> => {
+      cpuRetry.dispose();
+    };
+    const loadRetryRuntime = (signal: AbortSignal): Promise<LlamaRuntime | null> =>
+      cpuRetry.load(signal);
+    const onGpuLost = async (reason: 'lost' | 'degenerate' = 'lost'): Promise<void> => {
+      if (reason === 'degenerate') {
+        const next = cpuFallback(selectionState.current);
+        if (next && next !== selectionState.current) {
+          if (isGpuLoadFallback(selectionState.current, next)) {
+            this.markGpuFallback('output');
+          }
+          selectionState.current = next;
+        }
+        this.gpuDiagnostic = mergeGpuDiagnostic(
+          lastGpuDiagnostic(),
+          'degenerate output',
+          lastWebGpuLoadLog(),
+        );
+        await disposeCpuRetry();
+        await manager.unload();
+        return;
+      }
+      const now = Date.now();
+      const next = selectionAfterGpuLoss(selectionState.current, now - lastGpuLossAt);
+      lastGpuLossAt = now;
+      if (next !== selectionState.current) {
+        if (isGpuLoadFallback(selectionState.current, next)) {
+          this.markGpuFallback('device');
+        }
+        selectionState.current = next;
+      }
+      this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), this.gpuDiagnostic?.error);
+      await disposeCpuRetry();
+      await manager.unload();
+    };
+    const lazy = new LazyInBrowserEngine({ loadRuntime: load, loadRetryRuntime, onGpuLost });
+    const localRuntime = new LocalServerRuntime(() => this.localConfig);
+    this.localScheduler = new JobScheduler(localRuntime.parallel, 'pool');
+    const localEngine = new InBrowserEngine(localRuntime, { scheduler: this.localScheduler });
+    const plamo = new PlamoSourceEngine(lazy, localEngine, () => this.engineSource);
+
+    // A translation that still reads as the source must not become the cached answer for
+    // every later retry. The PDF session also marks retries with `bypassCache`.
+    const acceptCachedTranslation: CacheAccept = (text, source, options) =>
+      !translationStaysInSourceLanguage(source, text, options.tgt);
+
+    const chromeForCache = chrome.available
+      ? new CachingEngine(chrome, cache, 'chrome', 'chrome', acceptCachedTranslation)
+      : null;
+
+    const router = new RoutingEngine({
+      plamo: new CachingEngine(
+        plamo,
+        cache,
+        () => this.cacheModelId(),
+        () =>
+          this.engineSource === 'local-server' ? 'local-server' : selectionState.current.backend,
+        acceptCachedTranslation,
+      ),
+      chrome: chromeForCache,
+      plamoSupports: (src, tgt) =>
+        (canonicalLanguage(tgt) !== null || isPlamoOnlyTarget(tgt)) &&
+        (src === undefined || src.trim().length === 0 || canonicalLanguage(src) !== null),
+      chromeSupport: (segments, src, tgt) => this.chromeSupport(chrome, segments, src, tgt),
+    });
+
+    const model = await manager.status(this.activeModelId);
+    this.plamoReady = modelCanTranslate(model);
+
+    return {
+      manager,
+      router,
+      chrome,
+      lazy,
+      load,
+      get selection() {
+        return selectionState.current;
+      },
+      clearCache: () => cache.clear(),
+      setTier: async (tier: TierPreference) => {
+        selectionState.current = selectionForTier(tier, probe);
+        this.gpuFallback = false;
+        this.gpuFallbackReason = null;
+        this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), null);
+        lazy.reset();
+        await disposeCpuRetry();
+        await manager.unload();
+      },
+      disposeRetryRuntime: disposeCpuRetry,
+      leaveWebGpu: onGpuLost,
+    };
+  }
+
+  private async chromeSupport(
+    chrome: ChromeTranslatorEngine,
+    segments: readonly { id: string; text: string }[],
+    src: string | undefined,
+    tgt: string,
+  ): Promise<PairSupport> {
+    if (!chrome.available || isPlamoOnlyTarget(tgt)) return 'unavailable';
+
+    let source = src;
+    if (!source || source.trim().length === 0) {
+      const sample = segments
+        .map((segment) => segment.text)
+        .join('\n')
+        .slice(0, 1000);
+      const detected = await chrome.detect(sample);
+      if (!detected) return 'unavailable';
+      source = detected;
+    }
+
+    return chrome.availability(source, tgt);
+  }
+
+  private async handleMessage(port: Browser.runtime.Port, message: unknown): Promise<void> {
+    if (!isEngineHostRequest(message)) return;
+
+    switch (message.type) {
+      case 'ping':
+        try {
+          await this.services();
+          this.respond(port, message.requestId, null);
+        } catch (error) {
+          this.respondError(port, message.requestId, error);
+        }
+        return;
+      case 'status':
+        try {
+          this.respond(port, message.requestId, await this.status());
+        } catch (error) {
+          this.respondError(port, message.requestId, error);
+        }
+        return;
+      case 'translate':
+        this.abortBenchmark();
+        void this.handleTranslate(port, message);
+        return;
+      case 'cancel':
+        this.requests.get(message.requestId)?.controller.abort();
+        this.requests.delete(message.requestId);
+        return;
+      case 'model-cancel':
+        this.requests.get(message.requestId)?.controller.abort();
+        this.requests.delete(message.requestId);
+        if (message.modelId) this.cancelModel(message.modelId);
+        return;
+      case 'model-download':
+        void this.handleDownload(port, message);
+        return;
+      case 'model-warm':
+        void this.handleWarm(port, message.requestId);
+        return;
+      case 'model-delete':
+        void this.handleDelete(port, message);
+        return;
+      case 'model-use':
+        void this.handleUse(port, message.requestId, message.modelId);
+        return;
+      case 'model-status':
+        void this.handleModelStatus(port, message);
+        return;
+      case 'cache-clear':
+        void this.handleCacheClear(port, message);
+        return;
+      case 'tier-set':
+        void this.handleTier(port, message);
+        return;
+      case 'source-set':
+        void this.handleSource(port, message);
+        return;
+      case 'model-set':
+        void this.handleModelSet(port, message);
+        return;
+      case 'runtime-set':
+        this.handleRuntime(port, message);
+        return;
+      case 'folder-reload':
+        void this.handleFolderReload(port, message);
+        return;
+      case 'folder-delete-opfs':
+        void this.handleFolderDeleteOpfs(port, message);
+        return;
+      case 'folder-adopt':
+        void this.handleFolderAdopt(port, message);
+        return;
+      case 'folder-to-browser':
+        void this.handleFolderToBrowser(port, message);
+        return;
+      case 'benchmark':
+        void this.handleBenchmark(port, message);
+        return;
+    }
+  }
+
+  private async handleTranslate(
+    port: Browser.runtime.Port,
+    request: TranslateRequest,
+  ): Promise<void> {
+    await this.switchTask;
+    const controller = new AbortController();
+    this.requests.set(request.requestId, { controller, port, kind: 'translate' });
+    this.touch();
+
+    try {
+      const services = await this.services();
+      if (controller.signal.aborted) return;
+
+      const options = deserializeTranslateOptions(request.options, controller.signal);
+
+      for await (const chunk of services.router.translate(request.segments, options)) {
+        if (controller.signal.aborted) return;
+        this.post(port, { type: 'chunk', requestId: request.requestId, chunk });
+      }
+
+      if (controller.signal.aborted) return;
+      this.post(port, { type: 'done', requestId: request.requestId });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      this.post(port, {
+        type: 'error',
+        requestId: request.requestId,
+        error: errorPayload(error),
+      });
+    } finally {
+      this.requests.delete(request.requestId);
+      this.touch();
+    }
+  }
+
+  private async handleWarm(port: Browser.runtime.Port, requestId: string): Promise<void> {
+    await this.switchTask;
+    const controller = new AbortController();
+    this.requests.set(requestId, { controller, port, kind: 'warm' });
+    this.warming = true;
+    this.touch();
+
+    try {
+      const snapshot = await this.prewarmSnapshot();
+      if (!snapshot?.consented) {
+        const services = await this.services();
+        this.respond(port, requestId, await services.manager.status(this.activeModelId));
+        return;
+      }
+      const services = await this.services();
+      if (controller.signal.aborted) return;
+      if (this.engineSource === 'local-server') {
+        this.plamoReady = true;
+        this.respond(port, requestId, await services.manager.status(this.activeModelId));
+        return;
+      }
+      let loaded = services.manager.loadedModel;
+      if (!loaded || loaded.id !== this.activeModelId) {
+        loaded = await services.load(controller.signal);
+      }
+      if (controller.signal.aborted) return;
+      try {
+        await warmup(loaded.runtime, 'ja', controller.signal);
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        if (!isDegenerateWarmup(error)) {
+          // The short warm-up is optional when it is not a collapsed kernel.
+        } else if (!services.leaveWebGpu) {
+          throw error;
+        } else {
+          services.lazy.reset();
+          await services.leaveWebGpu('degenerate');
+          if (controller.signal.aborted) throw error;
+          loaded = await services.load(controller.signal);
+          await warmup(loaded.runtime, 'ja', controller.signal);
+        }
+      }
+      if (controller.signal.aborted) return;
+      this.plamoReady = true;
+      this.respond(port, requestId, await services.manager.status(this.activeModelId));
+      void this.prewarmFrequent(services);
+    } catch (error) {
+      if (!controller.signal.aborted) this.respondError(port, requestId, error);
+    } finally {
+      this.warming = false;
+      this.requests.delete(requestId);
+      this.touch();
+    }
+  }
+
+  private async handleDownload(
+    port: Browser.runtime.Port,
+    request: ModelDownloadRequest,
+  ): Promise<void> {
+    const modelId = request.modelId;
+    let download = this.downloads.get(modelId);
+    if (download?.controller.signal.aborted) {
+      // An aborted download is winding down; never attach a new caller to it.
+      download = undefined;
+    }
+    const requestId = request.requestId;
+    if (!download) {
+      if (request.attachOnly) {
+        const controller = new AbortController();
+        this.requests.set(requestId, { controller, port, kind: 'download', modelId });
+        this.touch();
+        try {
+          const services = await this.services();
+          if (controller.signal.aborted) return;
+          const status = await services.manager.status(modelId, { signal: controller.signal });
+          if (
+            controller.signal.aborted ||
+            this.requests.get(requestId)?.controller !== controller
+          ) {
+            return;
+          }
+          this.respond(port, requestId, status);
+        } catch (error) {
+          if (!controller.signal.aborted) this.respondError(port, requestId, error);
+        } finally {
+          if (this.requests.get(requestId)?.controller === controller) {
+            this.requests.delete(requestId);
+          }
+          this.touch();
+        }
+        return;
+      }
+      download = this.startDownload(modelId);
+    }
+
+    download.attachments.set(requestId, port);
+    this.requests.set(requestId, {
+      controller: download.controller,
+      port,
+      kind: 'download',
+      modelId,
+    });
+    this.touch();
+
+    try {
+      if (request.attachOnly && !download.status && !download.controller.signal.aborted) {
+        const services = await this.services();
+        const persisted = await services.manager.status(modelId);
+        if (
+          !download.controller.signal.aborted &&
+          this.downloads.get(modelId) === download &&
+          !download.status
+        ) {
+          download.status = {
+            id: modelId,
+            state: 'downloading',
+            received: persisted.received,
+            total: persisted.total || getModel(modelId).size,
+            progress: persisted.progress,
+          };
+        }
+      }
+      if (download.status) {
+        this.post(port, { type: 'model-progress', requestId, status: download.status });
+      }
+      const status = await download.operation;
+      if (!download.controller.signal.aborted) this.respond(port, requestId, status);
+    } catch (error) {
+      this.respondError(port, requestId, error);
+    } finally {
+      download.attachments.delete(requestId);
+      this.requests.delete(requestId);
+      this.touch();
+    }
+  }
+
+  private cancelModel(modelId: ModelId): void {
+    const download = this.downloads.get(modelId);
+    download?.controller.abort();
+    for (const [requestId, request] of this.requests) {
+      if (request.kind !== 'download' || request.modelId !== modelId) continue;
+      if (request.port) this.respondError(request.port, requestId, abortError());
+      request.controller.abort();
+      this.requests.delete(requestId);
+    }
+    void this.services()
+      .then((services) => services.manager.cancel(modelId))
+      .catch(() => undefined);
+  }
+
+  private startDownload(modelId: ModelId): ActiveDownload {
+    const model = getModel(modelId);
+    const controller = new AbortController();
+    const download: ActiveDownload = {
+      modelId,
+      controller,
+      operation: Promise.resolve({
+        id: modelId,
+        state: 'absent',
+        received: 0,
+        total: model.size,
+        progress: 0,
+      }),
+      attachments: new Map(),
+      status: null,
+    };
+    this.downloads.set(modelId, download);
+
+    download.operation = this.runDownload(download).finally(() => {
+      if (this.downloads.get(modelId) === download) this.downloads.delete(modelId);
+      for (const [requestId, entry] of this.requests) {
+        if (entry.controller === controller) this.requests.delete(requestId);
+      }
+    });
+
+    return download;
+  }
+
+  private async runDownload(download: ActiveDownload): Promise<ModelStatus> {
+    const { modelId, controller } = download;
+
+    try {
+      const services = await this.services();
+
+      if (services.manager.loadedModel?.id === modelId) {
+        return services.manager.status(modelId);
+      }
+
+      if (sharedFolderNeedsPermission(this.folderSession?.status())) {
+        throw folderPermissionError();
+      }
+
+      // The service worker checks license consent before it forwards model:download.
+      await services.manager.download(modelId, {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          this.reportProgress(download, progress);
+        },
+      });
+
+      const status = await services.manager.status(modelId);
+      download.status = status;
+      if (modelId === this.activeModelId) {
+        this.plamoReady = modelCanTranslate(status);
+      }
+      return status;
+    } finally {
+      this.touch();
+    }
+  }
+
+  private reportProgress(download: ActiveDownload, progress: DownloadProgress): void {
+    const status = advanceModelStatus(download.status, {
+      id: download.modelId,
+      state: progress.phase === 'verify' ? 'verifying' : 'downloading',
+      received: progress.received,
+      total: getModel(download.modelId).size,
+      progress: progress.ratio,
+    });
+    download.status = status;
+
+    for (const [requestId, port] of download.attachments) {
+      this.post(port, { type: 'model-progress', requestId, status });
+    }
+  }
+
+  private async handleDelete(
+    port: Browser.runtime.Port,
+    request: ModelDeleteRequest,
+  ): Promise<void> {
+    try {
+      const services = await this.services();
+      await services.manager.deleteModel(request.modelId);
+
+      if (request.modelId === this.activeModelId) {
+        services.lazy.reset();
+        await this.applyResolvedModel(services.manager, this.activeModelId, true);
+      }
+
+      this.respond(port, request.requestId, await services.manager.status(request.modelId));
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleUse(
+    port: Browser.runtime.Port,
+    requestId: string,
+    modelId: ModelId,
+  ): Promise<void> {
+    try {
+      const services = await this.services();
+
+      for (const [id, request] of this.requests) {
+        if (request.kind !== 'warm') continue;
+        this.abortLiveRequest(id, request);
+      }
+
+      services.lazy.reset();
+      await services.disposeRetryRuntime?.();
+      await services.manager.unload();
+      this.activeModelId = modelId;
+      this.modelFallback = false;
+      await this.persistActiveModel();
+
+      const status = await services.manager.status(modelId);
+      this.plamoReady = modelCanTranslate(status);
+      this.respond(port, requestId, status);
+    } catch (error) {
+      this.respondError(port, requestId, error);
+    }
+  }
+
+  private detachPort(port: Browser.runtime.Port): void {
+    for (const [requestId, request] of this.requests) {
+      if (request.port !== port) continue;
+      if (request.kind === 'download') {
+        request.port = null;
+        continue;
+      }
+      request.controller.abort();
+      this.requests.delete(requestId);
+    }
+
+    for (const download of this.downloads.values()) {
+      for (const [requestId, attached] of download.attachments) {
+        if (attached === port) download.attachments.delete(requestId);
+      }
+    }
+  }
+
+  private async statusOf(services: EngineServices): Promise<EngineStatus> {
+    // Chrome can revoke the active grant when the last extension page closes, while this
+    // offscreen document stays alive. A cheap query (TTL-cached in the session) notices that
+    // before returning the snapshot, so polling does not keep claiming the folder is ready.
+    await this.folderSession?.refreshPermissionSnapshot().catch(() => undefined);
+
+    const download = this.downloads.get(this.activeModelId);
+    let model = download?.status ?? (await services.manager.status(this.activeModelId));
+    const loaded = services.manager.loadedModel;
+    const selection = loaded?.selection ?? services.selection;
+    const local = this.engineSource === 'local-server';
+    const sharedFolder = this.folderSession?.status();
+    model = modelStatusForSharedFolder(model, sharedFolder);
+
+    if (this.warming && model.state !== 'loaded' && model.state !== 'error') {
+      model = { ...model, state: 'loading' };
+    }
+
+    this.plamoReady = modelCanTranslate(model);
+
+    return {
+      model,
+      backend: local ? 'local-server' : selection.backend,
+      tier: local ? null : selection.tier,
+      threads: local ? 1 : selection.nThreads,
+      parallel: local ? this.localConfig.parallel : selection.nParallel,
+      gpuFallback: this.gpuFallback && selection.backend === 'cpu-wasm',
+      ...(this.gpuFallback
+        ? { gpuFallbackReason: this.gpuFallbackReason ?? ('load' as const) }
+        : {}),
+      ...(this.gpuDiagnostic ? { gpuDiagnostic: this.gpuDiagnostic } : {}),
+      plamoReady: local ? true : this.plamoReady,
+      chromeSupported: services.chrome.available,
+      active: services.router.activeEngine,
+      engineSource: this.engineSource,
+      ...(this.modelFallback ? { modelFallback: true } : {}),
+      ...(sharedFolder ? { sharedFolder } : {}),
+    };
+  }
+
+  private async reloadFolder(moveOpfs: boolean): Promise<SharedFolderStatus> {
+    const services = await this.services();
+    for (const [id, live] of this.requests) {
+      if (live.kind === 'download') continue;
+      this.abortLiveRequest(id, live);
+    }
+    services.lazy.reset();
+    await services.disposeRetryRuntime?.();
+    await services.manager.unload();
+    const status = this.folderSession
+      ? await this.folderSession.apply({ moveOpfs })
+      : emptySharedFolderStatus(false);
+    const model = modelStatusForSharedFolder(
+      await services.manager.status(this.activeModelId),
+      status,
+    );
+    this.plamoReady = modelCanTranslate(model);
+    // Publish only over the engine port. runtime.sendMessage would fan out to BFCached
+    // content targets and leave an unchecked lastError in the offscreen document.
+    this.publishModelStatus(model);
+    return status;
+  }
+
+  private async handleFolderReload(
+    port: Browser.runtime.Port,
+    request: FolderReloadRequest,
+  ): Promise<void> {
+    try {
+      this.respond(port, request.requestId, await this.reloadFolder(false));
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleFolderAdopt(
+    port: Browser.runtime.Port,
+    request: FolderAdoptRequest,
+  ): Promise<void> {
+    try {
+      this.respond(port, request.requestId, await this.reloadFolder(true));
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleFolderToBrowser(
+    port: Browser.runtime.Port,
+    request: FolderToBrowserRequest,
+  ): Promise<void> {
+    try {
+      const services = await this.services();
+      // Re-apply first so a grant that lapsed since the last status poll is classified as
+      // unreadable rather than an empty folder. `copyPresentModelsToBrowser` sees permission
+      // errors as missing files, so dropping the handle here would lose the recorded models
+      // and start a re-download.
+      const current = this.folderSession
+        ? await this.folderSession.apply()
+        : emptySharedFolderStatus(false);
+      if (current.configured && current.permission !== 'granted') {
+        const model = modelStatusForSharedFolder(
+          await services.manager.status(this.activeModelId),
+          current,
+        );
+        this.plamoReady = modelCanTranslate(model);
+        this.publishModelStatus(model);
+        this.respond(port, request.requestId, { folder: current, copied: [] });
+        return;
+      }
+
+      const copied = await services.manager.copyPresentModelsToBrowser();
+      await services.manager.unload();
+      await clearStoredSharedFolder();
+      const status = this.folderSession
+        ? await this.folderSession.apply()
+        : emptySharedFolderStatus(false);
+      const model = modelStatusForSharedFolder(
+        await services.manager.status(this.activeModelId),
+        status,
+      );
+      this.plamoReady = modelCanTranslate(model);
+      this.publishModelStatus(model);
+      this.respond(port, request.requestId, { folder: status, copied });
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleFolderDeleteOpfs(
+    port: Browser.runtime.Port,
+    request: FolderDeleteOpfsRequest,
+  ): Promise<void> {
+    try {
+      const services = await this.services();
+      const current = this.folderSession?.status();
+      if (current && !canDeleteBrowserCopy(current, request.modelId)) {
+        // A stale surface must not remove the only browser copy while the folder grant is
+        // missing and no folder copy was ever recorded.
+        this.respond(port, request.requestId, current);
+        return;
+      }
+      await services.manager.deleteFallbackCopy(request.modelId);
+      const status = this.folderSession
+        ? await this.folderSession.refresh()
+        : emptySharedFolderStatus(false);
+      this.respond(port, request.requestId, status);
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private cacheModelId(): string {
+    if (this.engineSource !== 'local-server') return this.activeModelId;
+    return `local:${this.localConfig.model.length > 0 ? this.localConfig.model : 'default'}`;
+  }
+
+  private applyStoredSettings(stored: Settings | null): void {
+    this.applySource(stored?.engineSource ?? 'in-browser', localServerConfigFromSettings(stored));
+  }
+
+  private applySource(source: EngineSource, config: LocalServerConfig): void {
+    const previous = this.engineSource;
+    this.engineSource = source;
+    this.localConfig = config;
+    this.localScheduler?.setConcurrency(config.parallel);
+    if (previous === 'in-browser' && source === 'local-server' && this.servicesTask) {
+      void this.unloadInBrowserRuntime();
+    }
+  }
+
+  private async unloadInBrowserRuntime(): Promise<void> {
+    try {
+      const services = await this.services();
+      services.lazy.reset();
+      await services.disposeRetryRuntime?.();
+      await services.manager.unload();
+    } catch {
+      // Unloading the in-browser runtime is best effort when switching away.
+    }
+  }
+
+  private async handleSource(port: Browser.runtime.Port, request: SourceSetRequest): Promise<void> {
+    this.applySource(request.engineSource, {
+      baseUrl: request.localServer.url,
+      model: request.localServer.model,
+      apiKey: request.localServer.apiKey,
+      timeoutMs: request.localServer.timeoutMs,
+      allowRemote: request.localServer.allowRemote,
+      parallel: request.localServer.parallel,
+    });
+    this.respond(port, request.requestId, null);
+    this.touch();
+  }
+
+  private async handleModelSet(
+    port: Browser.runtime.Port,
+    request: ModelSetRequest,
+  ): Promise<void> {
+    this.preferredModelId = request.modelId;
+    try {
+      // A document that is already running must switch now, including dropping the
+      // loaded runtime so the next translation cannot keep the old weights while
+      // status and cache keys already name the new id. A new document records
+      // the id and applies it when services() first opens, which is after this
+      // response, so connecting does not wait on the GPU probe.
+      if (this.servicesTask) {
+        const services = await this.services();
+        if (this.preferredModelId === request.modelId) {
+          await this.applyResolvedModel(services.manager, request.modelId, false, services);
+        }
+      }
+      this.respond(port, request.requestId, null);
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private handleRuntime(port: Browser.runtime.Port, request: RuntimeSetRequest): void {
+    // Idle, tier, and prewarm inputs only. The selected model is pushed separately
+    // with `model-set`; a settings change must not restore a stale id over it.
+    this.runtimePrefs = {
+      idleMinutes: request.idleMinutes,
+      tier: request.tier,
+      targetLanguage: request.targetLanguage,
+      form: request.form,
+      glossary: request.glossary.map((entry) => ({ source: entry.source, target: entry.target })),
+      consented: request.consented,
+    };
+    this.respond(port, request.requestId, null);
+    this.touch();
+  }
+
+  private async onSettingsChanged(): Promise<void> {
+    const stored = await loadSettings().catch(() => null);
+    this.applyStoredSettings(stored);
+    this.touch();
+  }
+
+  private async restorePreferred(services: EngineServices): Promise<void> {
+    const preferred = this.preferredModelId ?? this.storedModelId ?? DEFAULT_MODEL_ID;
+    await this.applyResolvedModel(services.manager, preferred, false);
+  }
+
+  private applyResolvedModel(
+    manager: ModelManager,
+    preferred: ModelId,
+    persist: boolean,
+    runtime?: EngineServices,
+  ): Promise<void> {
+    const run = this.selectionChain.then(() =>
+      this.resolveAndApply(manager, preferred, persist, runtime),
+    );
+    this.selectionChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async resolveAndApply(
+    manager: ModelManager,
+    preferred: ModelId,
+    persist: boolean,
+    runtime?: EngineServices,
+  ): Promise<void> {
+    const statuses = await Promise.all(
+      SELECTABLE_MODEL_IDS.map((modelId) => manager.status(modelId)),
+    );
+    const resolved = resolveActiveModel(preferred, statuses);
+    const changed = resolved.modelId !== this.activeModelId;
+    if (changed && runtime) {
+      const switchRun = this.runModelSwitch(runtime, resolved, statuses, persist);
+      this.switchTask = switchRun.catch(() => undefined);
+      await switchRun;
+      return;
+    }
+    this.activeModelId = resolved.modelId;
+    this.modelFallback = resolved.fallback;
+    const active = statuses.find((status) => status.id === resolved.modelId);
+    this.plamoReady = active ? modelCanTranslate(active) : false;
+    if (persist || resolved.fallback) await this.persistActiveModel();
+  }
+
+  /**
+   * Abort in-flight controllers, drop the lazy runtime, publish the new id, then
+   * tell callers the previous work is gone (`model-changed`). Unload may yield;
+   * `handleTranslate` waits on `switchTask` so a retry cannot snapshot the old
+   * id or call `ensureLoaded(old)` after `lazy.reset()`.
+   */
+  private async runModelSwitch(
+    runtime: EngineServices,
+    resolved: { modelId: ModelId; fallback: boolean },
+    statuses: readonly ModelStatus[],
+    persist: boolean,
+  ): Promise<void> {
+    const live: Array<[string, HostRequest]> = [];
+    this.abortBenchmark();
+    this.warming = false;
+    this.prewarmKey = null;
+    for (const [id, request] of this.requests) {
+      if (request.kind === 'download') continue;
+      request.controller.abort();
+      live.push([id, request]);
+    }
+
+    runtime.lazy.reset();
+    await runtime.disposeRetryRuntime?.();
+    this.activeModelId = resolved.modelId;
+    this.modelFallback = resolved.fallback;
+    const active = statuses.find((status) => status.id === resolved.modelId);
+    this.plamoReady = active ? modelCanTranslate(active) : false;
+
+    for (const [id, request] of live) this.failLiveForModelChange(id, request);
+    if (persist || resolved.fallback) await this.persistActiveModel();
+    await runtime.manager.unload();
+  }
+
+  /**
+   * Drop in-flight translate/warm work before the loaded runtime is replaced.
+   * The caller still has a ChunkStream (or a pending warm round-trip) open, so
+   * each request gets an `error` / failed response; a silent abort would hang
+   * the client. A client-initiated cancel already ended its stream and ignores
+   * a late error.
+   */
+  private abortLiveRequest(id: string, request: HostRequest): void {
+    request.controller.abort();
+    this.failLiveForModelChange(id, request);
+  }
+
+  private failLiveForModelChange(id: string, request: HostRequest): void {
+    if (request.port) {
+      const error = modelChangedError();
+      if (request.kind === 'translate') {
+        this.post(request.port, {
+          type: 'error',
+          requestId: id,
+          error: errorPayload(error),
+        });
+      } else if (request.kind === 'warm') {
+        this.respondError(request.port, id, error);
+      }
+    }
+    this.requests.delete(id);
+  }
+
+  /**
+   * Chrome's offscreen document has no `chrome.storage`. Post the choice on the
+   * engine port so the service worker, which does have storage, can save it.
+   * Firefox's engine frame writes directly.
+   */
+  private async persistActiveModel(): Promise<void> {
+    if (browser.storage?.local) {
+      await saveSettings({ selectedModelId: this.activeModelId }).catch(() => undefined);
+      return;
+    }
+    for (const port of this.ports) {
+      this.post(port, { type: 'model-persist', modelId: this.activeModelId });
+    }
+  }
+
+  private async handleModelStatus(
+    port: Browser.runtime.Port,
+    request: ModelStatusRequest,
+  ): Promise<void> {
+    try {
+      const active = this.downloads.get(request.modelId);
+      if (active && !active.controller.signal.aborted && active.status) {
+        this.respond(port, request.requestId, active.status);
+        return;
+      }
+      const services = await this.services();
+      if (active && !active.controller.signal.aborted && active.status) {
+        this.respond(port, request.requestId, active.status);
+        return;
+      }
+      const persisted = await services.manager.status(request.modelId);
+      if (
+        active &&
+        !active.controller.signal.aborted &&
+        this.downloads.get(request.modelId) === active
+      ) {
+        // Before the first chunk arrives on a resumed download, preserve the on-disk byte count
+        // so `advanceModelStatus` does not interpret a synthetic 0 as a restart from scratch.
+        this.respond(port, request.requestId, {
+          id: request.modelId,
+          state: 'downloading',
+          received: persisted.received,
+          total: persisted.total || getModel(request.modelId).size,
+          progress: persisted.progress,
+        });
+        return;
+      }
+      this.respond(port, request.requestId, persisted);
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleCacheClear(
+    port: Browser.runtime.Port,
+    request: CacheClearRequest,
+  ): Promise<void> {
+    try {
+      const services = await this.services();
+      await services.clearCache();
+      this.respond(port, request.requestId, null);
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleTier(port: Browser.runtime.Port, request: TierSetRequest): Promise<void> {
+    try {
+      const services = await this.services();
+      await services.setTier(request.tier);
+      this.respond(port, request.requestId, null);
+    } catch (error) {
+      this.respondError(port, request.requestId, error);
+    }
+  }
+
+  private async handleBenchmark(
+    port: Browser.runtime.Port,
+    request: BenchmarkRequest,
+  ): Promise<void> {
+    if ([...this.requests.values()].some((entry) => entry.kind === 'translate')) {
+      this.respond(port, request.requestId, null);
+      return;
+    }
+
+    const controller = new AbortController();
+    this.benchmark = controller;
+    this.requests.set(request.requestId, { controller, port, kind: 'warm' });
+    this.touch();
+
+    try {
+      const services = await this.services();
+      const loaded = services.manager.loadedModel;
+      if (!loaded || controller.signal.aborted) {
+        this.respond(port, request.requestId, null);
+        return;
+      }
+
+      const started = performance.now();
+      await loaded.runtime.complete({
+        prompt: buildTranslationPrompt({
+          text: QUALITY_PARAGRAPH,
+          tgt: plamoPromptTargetLanguage('ja'),
+          form: 'polite',
+        }),
+        maxTokens: 512,
+        signal: controller.signal,
+        onToken: () => undefined,
+      });
+      if (controller.signal.aborted) {
+        this.respond(port, request.requestId, null);
+        return;
+      }
+      this.respond(port, request.requestId, { milliseconds: performance.now() - started });
+    } catch (error) {
+      if (controller.signal.aborted) this.respond(port, request.requestId, null);
+      else this.respondError(port, request.requestId, error);
+    } finally {
+      if (this.benchmark === controller) this.benchmark = null;
+      this.requests.delete(request.requestId);
+      this.touch();
+    }
+  }
+
+  private async prewarmSnapshot(): Promise<RuntimePrefs | null> {
+    if (browser.storage?.local) {
+      const stored = await loadSettings().catch(() => null);
+      if (stored) {
+        return {
+          idleMinutes: stored.idleMinutes,
+          tier: stored.tier,
+          targetLanguage: stored.targetLanguage,
+          form: stored.form,
+          glossary: stored.glossary,
+          consented: hasLicenseConsent(stored),
+        };
+      }
+    }
+    return this.runtimePrefs;
+  }
+
+  private async prewarmFrequent(services: EngineServices): Promise<void> {
+    const settings = await this.prewarmSnapshot();
+    if (!settings?.consented) return;
+
+    const request = prewarmRequest(settings.targetLanguage);
+    if (!request) return;
+
+    const key = `${this.activeModelId}|${settings.targetLanguage}|${settings.form}|${request.src}`;
+    if (this.prewarmKey === key) return;
+    this.prewarmKey = key;
+
+    const controller = new AbortController();
+    const requestId = `prewarm:${key}`;
+    this.requests.set(requestId, { controller, port: null, kind: 'translate' });
+    this.touch();
+
+    try {
+      const glossary = settings.glossary.filter(
+        (entry) => entry.source.trim().length > 0 && entry.target.trim().length > 0,
+      );
+      for (const segment of request.segments) {
+        if (controller.signal.aborted) break;
+        for await (const chunk of services.router.translate([segment], {
+          src: request.src,
+          tgt: settings.targetLanguage,
+          form: settings.form,
+          priority: 99,
+          signal: controller.signal,
+          ...(glossary.length > 0 ? { glossary } : {}),
+        })) {
+          if (controller.signal.aborted) break;
+          void chunk;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } catch {
+      this.prewarmKey = null;
+    } finally {
+      if (controller.signal.aborted) this.prewarmKey = null;
+      this.requests.delete(requestId);
+      this.touch();
+    }
+  }
+
+  private abortBenchmark(): void {
+    this.benchmark?.abort();
+    this.benchmark = null;
+  }
+
+  private touch(): void {
+    const generation = ++this.idleGeneration;
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    this.armRetryIdle();
+
+    void this.resolveIdleMs().then((ms) => {
+      if (generation !== this.idleGeneration || ms <= 0) return;
+      this.idleTimer = setTimeout(() => {
+        this.idleTimer = null;
+        void this.releaseIdle();
+      }, ms);
+    });
+  }
+
+  private armRetryIdle(): void {
+    if (this.retryIdleTimer) {
+      clearTimeout(this.retryIdleTimer);
+      this.retryIdleTimer = null;
+    }
+    this.retryIdleTimer = setTimeout(() => {
+      this.retryIdleTimer = null;
+      void this.releaseRetryRuntime();
+    }, RETRY_RUNTIME_IDLE_MS);
+  }
+
+  private async releaseRetryRuntime(): Promise<void> {
+    if (this.requests.size > 0) {
+      this.armRetryIdle();
+      return;
+    }
+    try {
+      const services = await this.services();
+      await services.disposeRetryRuntime?.();
+    } catch {
+      // Dropping the extra CPU copy is best effort; the next retry loads again.
+    }
+  }
+
+  private resolveIdleMs(): Promise<number> {
+    if (browser.storage?.local) {
+      return loadSettings()
+        .then((settings) => idleHoldMs(settings.idleMinutes))
+        .catch(() => this.idleFromPush());
+    }
+    return Promise.resolve(this.idleFromPush());
+  }
+
+  private idleFromPush(): number {
+    if (!this.runtimePrefs) return this.idleReleaseMs;
+    return idleHoldMs(this.runtimePrefs.idleMinutes);
+  }
+
+  private async releaseIdle(): Promise<void> {
+    if (this.requests.size > 0) {
+      this.touch();
+      return;
+    }
+
+    try {
+      const services = await this.services();
+      if (this.requests.size > 0) {
+        this.touch();
+        return;
+      }
+
+      services.lazy.reset();
+      await services.disposeRetryRuntime?.();
+      await services.manager.unload();
+      await services.chrome.dispose();
+    } catch {
+      // Releasing early is best effort; the next request loads again.
+    }
+  }
+
+  private respond(port: Browser.runtime.Port, requestId: string, value: unknown): void {
+    this.post(port, { type: 'response', requestId, ok: true, value });
+  }
+
+  private respondError(port: Browser.runtime.Port, requestId: string, error: unknown): void {
+    this.post(port, { type: 'response', requestId, ok: false, error: errorPayload(error) });
+  }
+
+  private post(port: Browser.runtime.Port, message: EngineHostMessage): void {
+    if (!this.ports.has(port)) {
+      scheduleRuntimeLastErrorClear();
+      return;
+    }
+    postPortMessage(port, message);
+  }
+}

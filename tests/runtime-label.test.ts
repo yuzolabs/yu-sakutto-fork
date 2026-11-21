@@ -1,0 +1,261 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_MODEL_ID } from '@/engine/model/catalog';
+import type { EngineStatus } from '@/shared/engine-status';
+import { runtimeLabel } from '@/ui/runtime-label';
+
+function status(overrides: Partial<EngineStatus> = {}): EngineStatus {
+  return {
+    model: {
+      id: DEFAULT_MODEL_ID,
+      state: 'loaded',
+      received: 1,
+      total: 1,
+      progress: 1,
+    },
+    backend: 'webgpu',
+    tier: 'g',
+    threads: 8,
+    parallel: 2,
+    plamoReady: true,
+    chromeSupported: true,
+    active: 'plamo',
+    ...overrides,
+  };
+}
+
+describe('runtime label', () => {
+  it('names the engine the page is actually using', () => {
+    expect(runtimeLabel({ status: null, pageSimple: false, targetLanguage: 'ja' }).key).toBe(
+      'runtimeChecking',
+    );
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'downloading',
+            received: 420_000_000,
+            total: 1_000_000_000,
+            progress: 0.42,
+          },
+          plamoReady: false,
+          active: null,
+        }),
+        pageSimple: true,
+        targetLanguage: 'ja',
+      }),
+    ).toEqual({ key: 'runtimeDownloading', substitutions: ['42', '420 MB', '1.00 GB'] });
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'verifying',
+            received: 0,
+            total: 1,
+            progress: 0,
+          },
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimeVerifying');
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'loading',
+            received: 1,
+            total: 1,
+            progress: 1,
+          },
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimeLoading');
+    expect(runtimeLabel({ status: status(), pageSimple: false, targetLanguage: 'ja' }).key).toBe(
+      'runtimePlamoGpu',
+    );
+    expect(
+      runtimeLabel({
+        status: status({ backend: 'cpu-wasm', tier: 'c8' }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoCpu');
+    expect(
+      runtimeLabel({
+        status: status({
+          backend: 'cpu-wasm',
+          tier: 'c8',
+          gpuFallback: true,
+          gpuFallbackReason: 'load',
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpuFallback');
+    expect(
+      runtimeLabel({
+        status: status({
+          backend: 'cpu-wasm',
+          tier: 'c8',
+          gpuFallback: true,
+          gpuFallbackReason: 'output',
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpuFallbackOutput');
+    expect(
+      runtimeLabel({
+        status: status({
+          backend: 'cpu-wasm',
+          tier: 'c8',
+          gpuFallback: true,
+          gpuFallbackReason: 'device',
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpuFallbackDevice');
+    expect(
+      runtimeLabel({
+        status: status({
+          backend: 'cpu-wasm',
+          tier: 'c8',
+          gpuFallback: true,
+          gpuFallbackReason: 'adapter',
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpuFallbackAdapter');
+    expect(runtimeLabel({ status: status(), pageSimple: true, targetLanguage: 'ja' }).key).toBe(
+      'runtimeChrome',
+    );
+    expect(runtimeLabel({ status: status(), pageSimple: false, targetLanguage: 'pt' }).key).toBe(
+      'runtimeChrome',
+    );
+    expect(
+      runtimeLabel({ status: status(), pageSimple: true, targetLanguage: 'ja-easy' }).key,
+    ).toBe('runtimePlamoGpu');
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'absent',
+            received: 0,
+            total: 1,
+            progress: 0,
+          },
+          plamoReady: false,
+          backend: null,
+          tier: null,
+          active: 'chrome',
+        }),
+        pageSimple: false,
+        targetLanguage: 'pt',
+      }).key,
+    ).toBe('runtimeChrome');
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'absent',
+            received: 0,
+            total: 1,
+            progress: 0,
+          },
+          plamoReady: false,
+          backend: null,
+          tier: null,
+          active: null,
+        }),
+        pageSimple: false,
+        targetLanguage: 'jv',
+      }).key,
+    ).toBe('runtimeWaiting');
+    expect(
+      runtimeLabel({
+        status: status({
+          engineSource: 'local-server',
+          backend: 'local-server',
+          plamoReady: true,
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'absent',
+            received: 0,
+            total: 1,
+            progress: 0,
+          },
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimeLocalServer');
+    expect(
+      runtimeLabel({
+        status: status({
+          plamoReady: false,
+          backend: null,
+          tier: null,
+          active: null,
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'error',
+            received: 0,
+            total: 1,
+            progress: 0,
+            error: 'model-folder-permission',
+          },
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimeWaiting');
+  });
+
+  it('does not stay on waiting when a stale plamoReady flag disagrees with the model status', () => {
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'loaded',
+            received: 1,
+            total: 1,
+            progress: 1,
+          },
+          plamoReady: false,
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpu');
+
+    expect(
+      runtimeLabel({
+        status: status({
+          model: {
+            id: DEFAULT_MODEL_ID,
+            state: 'ready',
+            received: 1,
+            total: 1,
+            progress: 1,
+          },
+          backend: 'cpu-wasm',
+          tier: 'c8',
+          gpuFallback: true,
+          plamoReady: false,
+        }),
+        pageSimple: false,
+        targetLanguage: 'ja',
+      }).key,
+    ).toBe('runtimePlamoGpuFallback');
+  });
+});

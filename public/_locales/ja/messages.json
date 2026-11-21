@@ -1,0 +1,1723 @@
+{
+  "extensionName": {
+    "message": "Sakutto - ローカルAI翻訳",
+    "description": "拡張機能の名前。"
+  },
+  "extensionShortName": {
+    "message": "Sakutto",
+    "description": "短い名前。"
+  },
+  "extensionDescription": {
+    "message": "ローカルLLMが、この端末の中でページを翻訳します。アカウント不要の無料拡張機能です。",
+    "description": "拡張機能の説明。"
+  },
+  "tagline": {
+    "message": "端末内で動くページ翻訳"
+  },
+  "settingsLabel": {
+    "message": "設定"
+  },
+  "targetLanguageLabel": {
+    "message": "訳先の言語"
+  },
+  "formalityLabel": {
+    "message": "文体（日本語）"
+  },
+  "formalityPolite": {
+    "message": "です・ます"
+  },
+  "formalityPlain": {
+    "message": "だ・である"
+  },
+  "displayLabel": {
+    "message": "表示"
+  },
+  "displayReplace": {
+    "message": "置換表示"
+  },
+  "displayBilingual": {
+    "message": "対訳表示"
+  },
+  "statusChecking": {
+    "message": "確認中…"
+  },
+  "pageStatusLabel": {
+    "message": "このページ"
+  },
+  "pageStatusUnavailable": {
+    "message": "翻訳できないページです。"
+  },
+  "pageStatusLanguageUnknown": {
+    "message": "言語不明"
+  },
+  "pageStatusReady": {
+    "message": "$LANG$・$COUNT$ ブロック",
+    "placeholders": {
+      "lang": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "engineStatusLabel": {
+    "message": "実行環境"
+  },
+  "engineHeading": {
+    "message": "エンジン"
+  },
+  "engineWebGpu": {
+    "message": "WebGPU"
+  },
+  "engineCpuWebGpuUnsupported": {
+    "message": "CPU（WebGPU 非対応）"
+  },
+  "engineCpuAdapterUnavailable": {
+    "message": "CPU（GPU アダプタなし）"
+  },
+  "engineCpuProbeFailed": {
+    "message": "CPU（WebGPU の確認に失敗）"
+  },
+  "engineUnavailable": {
+    "message": "確認できません"
+  },
+  "isolationLabel": {
+    "message": "分離コンテキスト"
+  },
+  "isolationOn": {
+    "message": "有効"
+  },
+  "isolationOff": {
+    "message": "無効"
+  },
+  "threadsLabel": {
+    "message": "論理コア"
+  },
+  "diagHeading": {
+    "message": "診断"
+  },
+  "diagBackend": {
+    "message": "使用中のバックエンド"
+  },
+  "diagThreads": {
+    "message": "スレッド"
+  },
+  "diagParallel": {
+    "message": "n_parallel"
+  },
+  "diagBackendGpu": {
+    "message": "WebGPU"
+  },
+  "diagBackendCpu": {
+    "message": "CPU"
+  },
+  "diagBackendUnknown": {
+    "message": "未ロード"
+  },
+  "diagRateHint": {
+    "message": "翻訳中のページでは、バーに tokens/s と区間/s が出ます。"
+  },
+  "diagGpuHeading": {
+    "message": "WebGPU アダプタ"
+  },
+  "diagGpuCopy": {
+    "message": "コピー"
+  },
+  "diagGpuCopied": {
+    "message": "コピーしました"
+  },
+  "diagGpuCopyFailed": {
+    "message": "コピーできませんでした"
+  },
+  "diagGpuHelp": {
+    "message": "この内容は端末の中だけにあります。WebGPU が失敗したときは GitHub の Issue に貼ってください。"
+  },
+  "diagGpuEmpty": {
+    "message": "WebGPU の報告はまだありません。"
+  },
+  "paceLabel": {
+    "message": "先読み"
+  },
+  "paceFast": {
+    "message": "広めに先読み"
+  },
+  "paceQuality": {
+    "message": "表示優先"
+  },
+  "paceHelp": {
+    "message": "画面に入る前の段落を先に翻訳しておきます。「広めに先読み」は画面の下を多めに先読みし、スクロールしたときに訳が出来上がっているようにします。PLaMo が対応する言語では、訳文はすべて PLaMo が生成します。Chrome の下書きは使いません。"
+  },
+  "paceHelpFirefox": {
+    "message": "画面に入る前の段落を先に翻訳しておきます。「広めに先読み」は画面の下を多めに先読みし、スクロールしたときに訳が出来上がっているようにします。訳文はすべて PLaMo が生成します。"
+  },
+  "pageRate": {
+    "message": "$TOKENS$ tok/s · $SEGMENTS$ 区間/s",
+    "placeholders": {
+      "tokens": {
+        "content": "$1"
+      },
+      "segments": {
+        "content": "$2"
+      }
+    }
+  },
+  "openOptions": {
+    "message": "設定を開く"
+  },
+  "unofficialNotice": {
+    "message": "非公式。Preferred Networks とは無関係です。Built with PLaMo。"
+  },
+  "optionsTitle": {
+    "message": "設定"
+  },
+  "optionsLead": {
+    "message": "翻訳の仕方、モデル、サイトごとの動作を設定します。変更は自動で保存されます。"
+  },
+  "privacyHeading": {
+    "message": "プライバシー"
+  },
+  "privacyBody": {
+    "message": "既定では、この拡張機能はページの本文を翻訳サーバーへ送りません。テレメトリはありません。"
+  },
+  "privacyDestinations": {
+    "message": "拡張機能自身の通信はモデルの取得だけです。接続は huggingface.co から始まり、Hugging Face の CDN へ転送されます。本文は含めません。言語パックは Chrome 自身が取得します。有効にしたローカルサーバーは、設定したアドレスへの任意の別経路です。"
+  },
+  "privacyDestinationsFirefox": {
+    "message": "拡張機能自身の通信はモデルの取得だけです。接続は huggingface.co から始まり、Hugging Face の CDN へ転送されます。本文は含めません。有効にしたローカルサーバーは、設定したアドレスへの任意の別経路です。"
+  },
+  "privacyPolicyLink": {
+    "message": "プライバシーポリシー"
+  },
+  "sourceCodeLink": {
+    "message": "ソースコード"
+  },
+  "licensesHeading": {
+    "message": "ライセンス"
+  },
+  "licensesBody": {
+    "message": "PLaMo Community License の全文と、この拡張機能の MIT ライセンスを同梱しています。"
+  },
+  "licensePlaMoJa": {
+    "message": "PLaMo コミュニティライセンス（日本語）"
+  },
+  "licensePlaMoEn": {
+    "message": "PLaMo Community License (English)"
+  },
+  "licenseMit": {
+    "message": "MIT License"
+  },
+  "licenseNotice": {
+    "message": "NOTICE"
+  },
+  "licenseModelNote": {
+    "message": "モデルの重みは同梱していません。この端末に保存されていないとき、Hugging Face の公式リポジトリから取得します。"
+  },
+  "openOnboarding": {
+    "message": "オンボーディングを開く"
+  },
+  "machineTranslationNotice": {
+    "message": "訳文は PLaMo による機械翻訳です。"
+  },
+  "onboardingEyebrow": {
+    "message": "はじめに"
+  },
+  "onboardingLead": {
+    "message": "ページ翻訳の既定は端末内です。PLaMo 3 のモデルは、この端末に保存されていないときだけダウンロードします。"
+  },
+  "onboardingSetupHeading": {
+    "message": "この拡張機能について"
+  },
+  "onboardingModelNote": {
+    "message": "標準モデル（573 MB）をこの端末へダウンロードします。100 Mbps を最後まで使えた場合の計算は約 46 秒で、実際の時間は回線により前後します。中断しても続きから再開できます。"
+  },
+  "onboardingBridgeNote": {
+    "message": "モデルの準備ができるまで、ページは原文のまま表示します。準備ができると PLaMo が訳します。Google の説明では、Chrome の翻訳は端末内で動きます。"
+  },
+  "onboardingBridgeNoteFirefox": {
+    "message": "モデルの準備ができるまで、ページは原文のまま表示します。準備ができると PLaMo が訳します。"
+  },
+  "onboardingPrivacyNote": {
+    "message": "内蔵エンジンは、ページの本文をサーバーへ送りません。"
+  },
+  "onboardingClose": {
+    "message": "閉じる"
+  },
+  "onboardingStart": {
+    "message": "ライセンスに同意して開始"
+  },
+  "onboardingStoreLegend": {
+    "message": "モデルの保存先"
+  },
+  "onboardingStoreBrowser": {
+    "message": "このブラウザ内に保存する"
+  },
+  "onboardingStoreFolder": {
+    "message": "共有モデルフォルダを使う（Chromiumブラウザ）"
+  },
+  "onboardingStoreFolderHelp": {
+    "message": "Chrome や Edge など複数の Chromium ブラウザで使う人向けです。モデルは1つで済みます。"
+  },
+  "onboardingStartFailed": {
+    "message": "準備を開始できませんでした。もう一度お試しください。"
+  },
+  "onboardingHttpError": {
+    "message": "モデルのダウンロードに失敗しました（HTTP $STATUS$）。もう一度お試しください。",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "errorSettings": {
+    "message": "設定を読み込めませんでした。"
+  },
+  "errorSaveSettings": {
+    "message": "設定を保存できませんでした。"
+  },
+  "errorPage": {
+    "message": "このページを読み取れませんでした。"
+  },
+  "errorAction": {
+    "message": "画面を開けませんでした。"
+  },
+  "retry": {
+    "message": "再試行"
+  },
+  "originalLabel": {
+    "message": "原文"
+  },
+  "chromeTranslationNote": {
+    "message": "Chrome の内蔵翻訳"
+  },
+  "machineTranslationTooltip": {
+    "message": "PLaMo による機械翻訳です。"
+  },
+  "selectionPending": {
+    "message": "翻訳しています…"
+  },
+  "selectionFailed": {
+    "message": "この選択範囲を翻訳できませんでした。"
+  },
+  "selectionTitle": {
+    "message": "選択したテキスト"
+  },
+  "selectionIcon": {
+    "message": "選択したテキストを翻訳します"
+  },
+  "selectionResizeHandle": {
+    "message": "翻訳ポップアップの幅を変更します（ダブルクリックでリセット）"
+  },
+  "selectionCopy": {
+    "message": "訳文をコピー"
+  },
+  "selectionCopied": {
+    "message": "コピーしました"
+  },
+  "selectionCopyFailed": {
+    "message": "コピーできませんでした。訳文を選んでコピーしてください。"
+  },
+  "close": {
+    "message": "閉じる"
+  },
+  "commandTranslate": {
+    "message": "このページを翻訳します。または原文に戻します。"
+  },
+  "commandBilingual": {
+    "message": "対訳で翻訳を始めるか、表示中の訳し方を切り替えます。"
+  },
+  "commandSelection": {
+    "message": "選択したテキストを翻訳します。"
+  },
+  "contextTranslatePage": {
+    "message": "このページを翻訳"
+  },
+  "contextTranslateSelection": {
+    "message": "選択したテキストを翻訳"
+  },
+  "translateThisPage": {
+    "message": "このページを翻訳"
+  },
+  "restoreThisPage": {
+    "message": "原文に戻す"
+  },
+  "pageStartBlocked": {
+    "message": "PLaMo のモデルのダウンロードと読み込みが終わるまで、ページ翻訳は始められません。進行状況はオンボーディングで確認できます。"
+  },
+  "pageTranslating": {
+    "message": "翻訳しています…"
+  },
+  "pageProgress": {
+    "message": "翻訳中 $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "pageProgressLabel": {
+    "message": "翻訳の進み具合"
+  },
+  "pageTranslated": {
+    "message": "翻訳しました。"
+  },
+  "pagePartial": {
+    "message": "翻訳できない箇所が $BLOCKS$ 件残っています。",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "pageAlwaysOn": {
+    "message": "このサイトは常に翻訳します。"
+  },
+  "siteGrantTitle": {
+    "message": "このサイトを翻訳します"
+  },
+  "siteGrantBody": {
+    "message": "$HOST$ を開いたときに、この端末で翻訳します。",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
+  "siteGrantAllow": {
+    "message": "許可する"
+  },
+  "siteGrantDenied": {
+    "message": "許可されませんでした。もう一度お試しください。"
+  },
+  "siteGrantInvalid": {
+    "message": "対象のサイトを確認できません。"
+  },
+  "targetAdjustedNote": {
+    "message": "ページの言語と翻訳先が同じだったため、翻訳先を切り替えました。"
+  },
+  "sameLanguageHint": {
+    "message": "このページは、すでに翻訳先の言語で書かれています。"
+  },
+  "displaySiteHint": {
+    "message": "この選択は、このサイトに記憶されます。"
+  },
+  "displayNowBilingual": {
+    "message": "このサイトの表示を対訳にしました。"
+  },
+  "displayNowReplace": {
+    "message": "このサイトの表示を置換にしました。"
+  },
+  "optionsDefaultHint": {
+    "message": "これらは初期値です。翻訳したサイトは、言語と表示方法を別に記憶できます。"
+  },
+  "optionsSiteLive": {
+    "message": "ここに表示する言語と表示方法は、サイトごとの設定です。上の設定は、サイトに設定がないときの初期値です。"
+  },
+  "alwaysTranslateSite": {
+    "message": "このサイトを常に翻訳します"
+  },
+  "shortcutHeading": {
+    "message": "キーボードショートカット"
+  },
+  "shortcutHelp": {
+    "message": "コマンドのチェックを外すと、Sakutto でオフになります。「ショートカットキーを変更」で Chrome のショートカット設定を開きます。ブラウザが割り当てたキーは、入力欄にフォーカスがあっても動作します。コマンドが「未設定」の場合は、設定画面を開いてキーを割り当ててください。"
+  },
+  "shortcutHelpFirefox": {
+    "message": "コマンドのチェックを外すと、Sakutto でオフになります。「ショートカットキーを変更」で Firefox 自身の設定画面を開きます。そこで割り当てたキーは、入力欄にフォーカスがあっても動作します。インストール時やアップデート時には、一度もキーが割り当てられていないコマンドへ、可能な場合に Firefox がキーを再設定します。削除したキーは削除されたままです。"
+  },
+  "shortcutChange": {
+    "message": "ショートカットキーを変更"
+  },
+  "shortcutUnset": {
+    "message": "未設定"
+  },
+  "shortcutUnsetNotice": {
+    "message": "ショートカットが未設定です"
+  },
+  "shortcutOpenSettings": {
+    "message": "ショートカットを設定"
+  },
+  "shortcutUse": {
+    "message": "このショートカットを使う"
+  },
+  "shortcutOff": {
+    "message": "オフ"
+  },
+  "shortcutTranslate": {
+    "message": "「$KEY$」で翻訳と原文を切り替えます",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "shortcutBilingual": {
+    "message": "「$KEY$」で置換表示と対訳表示を切り替え、このサイトの設定として記憶します。",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "shortcutSelection": {
+    "message": "「$KEY$」で選択したテキストを翻訳します",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "runtimePreparing": {
+    "message": "準備中 $PERCENT$%",
+    "placeholders": {
+      "percent": {
+        "content": "$1"
+      }
+    }
+  },
+  "runtimeDownloading": {
+    "message": "ダウンロード中 $PERCENT$%（$RECEIVED$ / $TOTAL$）",
+    "placeholders": {
+      "percent": {
+        "content": "$1"
+      },
+      "received": {
+        "content": "$2"
+      },
+      "total": {
+        "content": "$3"
+      }
+    }
+  },
+  "runtimeVerifying": {
+    "message": "ダウンロードしたファイルを確認しています。"
+  },
+  "runtimeLoading": {
+    "message": "モデルを読み込んでいます。"
+  },
+  "runtimePlamoGpu": {
+    "message": "PLaMo · WebGPU"
+  },
+  "runtimePlamoCpu": {
+    "message": "PLaMo · CPU"
+  },
+  "runtimePlamoGpuFallback": {
+    "message": "PLaMo · CPU（WebGPU でモデルを読み込めませんでした）"
+  },
+  "runtimePlamoGpuFallbackOutput": {
+    "message": "PLaMo · CPU（WebGPU の出力が壊れていました）"
+  },
+  "runtimePlamoGpuFallbackDevice": {
+    "message": "PLaMo · CPU（WebGPU デバイスでエラーが発生しました）"
+  },
+  "runtimePlamoGpuFallbackAdapter": {
+    "message": "PLaMo · CPU（WebGPU アダプターを利用できません — Chrome を再起動してください）"
+  },
+  "runtimeChrome": {
+    "message": "Chrome 内蔵の翻訳"
+  },
+  "runtimeWaiting": {
+    "message": "モデルの準備を待っています"
+  },
+  "runtimeError": {
+    "message": "モデルを読み込めません"
+  },
+  "runtimeChecking": {
+    "message": "確認中…"
+  },
+  "chromeOnlySuffix": {
+    "message": "（Chrome 内蔵）"
+  },
+  "jaEasyName": {
+    "message": "やさしい日本語"
+  },
+  "plamoOnlySuffix": {
+    "message": "（PLaMo）"
+  },
+  "onboardingStartNotice": {
+    "message": "「ライセンスに同意して開始」を押すと、PLaMo Community License の全文に同意したことになります。"
+  },
+  "onboardingCommercialHeading": {
+    "message": "PLaMoの利用条件"
+  },
+  "onboardingPersonalHeading": {
+    "message": "個人・学術目的での利用"
+  },
+  "onboardingPersonalBody": {
+    "message": "事前登録なしで利用できます。"
+  },
+  "onboardingCommercialHeading2": {
+    "message": "仕事・商業目的での利用"
+  },
+  "onboardingCommercialBody": {
+    "message": "企業内での業務利用も含まれます。利用するには、次の両方が必要です。"
+  },
+  "onboardingCommercialRegistration": {
+    "message": "PFNへの事前登録"
+  },
+  "onboardingCommercialRevenue": {
+    "message": "利用者または関係会社の直近年度の売上・収入が10億円以下"
+  },
+  "onboardingCommercialUnmetHeading": {
+    "message": "条件を満たさない場合"
+  },
+  "onboardingCommercialUnmetBody": {
+    "message": "商業利用にはPFNから別途ライセンスを取得する必要があります。"
+  },
+  "onboardingAgeNotice": {
+    "message": "18歳未満など、単独で契約できる年齢に達していない場合は、親権者等の同意が必要です。"
+  },
+  "onboardingConsentSentence": {
+    "message": "「ライセンスに同意して開始」を押すと、PLaMo Community Licenseに同意したことになります。"
+  },
+  "onboardingOtherLicenses": {
+    "message": "その他のライセンス情報"
+  },
+  "onboardingReconsentHeading": {
+    "message": "PLaMoの利用条件を読みやすくしました"
+  },
+  "onboardingReconsentBody": {
+    "message": "以前に PLaMo Community License に同意いただいています。利用条件の要約を読みやすくしたので、あらためて同意をお願いします。ダウンロード済みのモデルは、この端末にそのまま残ります。"
+  },
+  "onboardingReconsentStart": {
+    "message": "同意して続ける"
+  },
+  "plamoRegistrationLink": {
+    "message": "PFN の公式登録フォーム（商業利用）"
+  },
+  "plamoOfficialLicenseJa": {
+    "message": "PLaMo Community License（公式・日本語）"
+  },
+  "plamoOfficialLicenseEn": {
+    "message": "PLaMo Community License (official, English)"
+  },
+  "onboardingUseNow": {
+    "message": "Chrome 内蔵の翻訳を使うのは、PLaMo が対応していない言語の組み合わせだけです。"
+  },
+  "onboardingReadyHeading": {
+    "message": "準備ができました。"
+  },
+  "onboardingReadyLead": {
+    "message": "この端末でページを翻訳できます。"
+  },
+  "onboardingReadyToolbar": {
+    "message": "ツールバーのアイコンを押すと、開いているページを翻訳します。"
+  },
+  "onboardingReadyPage": {
+    "message": "「$KEY$」でページ全体を翻訳します。もう一度押すと、原文に戻します。",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "onboardingReadySelection": {
+    "message": "「$KEY$」で、選択したテキストを翻訳します。",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "onboardingReadyContext": {
+    "message": "ページを右クリックして「このページを翻訳」を選べます。選択した文字は「選択したテキストを翻訳」です。"
+  },
+  "onboardingTry": {
+    "message": "サンプルページで試す"
+  },
+  "onboardingWhileDownloading": {
+    "message": "モデルのダウンロード中、ページは原文のまま表示します。PLaMo の準備ができるまで訳文は出ません。"
+  },
+  "downloadEtaSeconds": {
+    "message": "あと約 $COUNT$ 秒です。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "downloadEtaMinutes": {
+    "message": "あと約 $COUNT$ 分です。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "downloadResuming": {
+    "message": "続きから再開しています。"
+  },
+  "downloadProgressLabel": {
+    "message": "ダウンロードの進捗"
+  },
+  "downloadPaused": {
+    "message": "ダウンロードを中断しました。続きから再開できます。"
+  },
+  "downloadResume": {
+    "message": "再開"
+  },
+  "downloadCancel": {
+    "message": "中断"
+  },
+  "modelHeading": {
+    "message": "モデル"
+  },
+  "modelStandard": {
+    "message": "標準（0.8B）"
+  },
+  "modelHigh": {
+    "message": "高精度（2B）"
+  },
+  "modelInUse": {
+    "message": "使用中"
+  },
+  "modelUse": {
+    "message": "このモデルを使う"
+  },
+  "modelDownload": {
+    "message": "ダウンロード"
+  },
+  "modelVerifying": {
+    "message": "ダウンロードしたファイルを確認しています…"
+  },
+  "modelDelete": {
+    "message": "削除"
+  },
+  "modelDeleteSharedFolder": {
+    "message": "このブラウザから外す"
+  },
+  "modelDeleteSharedFolderHint": {
+    "message": "共有フォルダでは、このボタンはこのブラウザの登録だけを外します。ファイルは共有フォルダに残ります。ファイル本体を削除するには、エクスプローラーまたはファインダーで削除してください。"
+  },
+  "modelFolderBravePermissionHint": {
+    "message": "Braveでは、許可タブを閉じるかブラウザを再起動するとフォルダの許可が切れることがあります。表示されたときは永続の許可（日本語UIの Chrome: 「サイトアクセス時は常に許可」）を選んでください。許可したのにこの表示が残る場合は、設定に戻ってもう一度許可してください。共有フォルダのピッカーが出ない場合は brave://flags/#file-system-access-api を Enabled にしてください。"
+  },
+  "modelSelectionFallback": {
+    "message": "選んでいたモデルがこの端末にないため、インストール済みのモデルに切り替えました。"
+  },
+  "modelSelectionMissing": {
+    "message": "翻訳モデルがありません。ダウンロードすると翻訳できます。"
+  },
+  "modelStorageLegend": {
+    "message": "モデルの保存先"
+  },
+  "storageOptionRecommended": {
+    "message": "おすすめ"
+  },
+  "modelStorageFolder": {
+    "message": "共有フォルダ"
+  },
+  "modelStorageBrowser": {
+    "message": "このブラウザ内"
+  },
+  "modelStorageCopyFolder": {
+    "message": "共有フォルダからコピー"
+  },
+  "modelStorageIntro": {
+    "message": "モデルの保存先を選びます。既存のモデルは選択に合わせて移動します。"
+  },
+  "modelStorageBrowserOnlyHint": {
+    "message": "このブラウザでは共有フォルダを使えないため、モデルはこのブラウザ内に保存されます。"
+  },
+  "modelStorageBraveEnableFsaHint": {
+    "message": "Braveの場合は brave://flags/#file-system-access-api を Enabled にして再起動すると、共有フォルダを使えます。"
+  },
+  "modelStorageFirefoxCopyHint": {
+    "message": "「ライセンスに同意して開始」を押すとフォルダ選択が開きます。モデルがあるフォルダを選び、「アップロード」を確認してください。Firefox はフォルダを継続利用せず、モデルを Firefox 内にコピーします。"
+  },
+  "modelStorageFirefoxImport": {
+    "message": "共有フォルダから取り込む"
+  },
+  "modelStorageFirefoxImportHint": {
+    "message": "別のブラウザ（例: Chrome）でダウンロードしたフォルダからモデルをコピーし、再ダウンロードせずに使えます。"
+  },
+  "modelStorageMoveFailed": {
+    "message": "モデルを共有フォルダへ移動できませんでした。ブラウザ内のコピーは残しています。"
+  },
+  "modelStorageMoveDone": {
+    "message": "モデルを共有フォルダに保存しました。"
+  },
+  "modelStorageCopyDone": {
+    "message": "モデルをこのブラウザ内に保存しました。"
+  },
+  "modelStorageCopyFailed": {
+    "message": "モデルをコピーできませんでした。以前の保存先のままです。"
+  },
+  "modelStorageSomeCopiesFailed": {
+    "message": "一部のモデルをコピーできませんでした。既存のコピーは残しています。"
+  },
+  "modelStorageNoModels": {
+    "message": "そのフォルダに公式の PLaMo モデルが見つかりませんでした。"
+  },
+  "modelStorageWorking": {
+    "message": "モデルフォルダを準備しています…"
+  },
+  "modelFolderReading": {
+    "message": "フォルダーを読み込み中…"
+  },
+  "modelStorageProgressLabel": {
+    "message": "モデルの移動・コピーの進行状況"
+  },
+  "modelFolderPickerHint": {
+    "message": "「ライセンスに同意して開始」を押すと、フォルダ選択がドキュメントで開きます。「ドキュメント/Sakutto」を作成するか選んでください。別のブラウザにモデルが既にある場合は、その既存フォルダを選びます。書き込みできる別のフォルダでもかまいません。"
+  },
+  "modelFolderChoose": {
+    "message": "モデルフォルダを選ぶ"
+  },
+  "modelFolderUsing": {
+    "message": "フォルダ $NAME$ を使っています。",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "modelFolderPermissionNeeded": {
+    "message": "共有モデルフォルダを読む許可が必要です。"
+  },
+  "modelFolderPermissionPresent": {
+    "message": "モデルはフォルダにあります。許可するとすぐ使えます。"
+  },
+  "modelFolderPermissionGrant": {
+    "message": "フォルダへのアクセスを許可"
+  },
+  "modelFolderPermissionPage": {
+    "message": "Sakuttoの許可タブが開きます。表示されたら、Chromeでは「サイトアクセス時は常に許可」、Edgeでは「アクセスするたびに確認する」（Chromeの「サイトアクセス時は常に許可」にあたる項目で、名前と違って次から確認されません）を選んでください。"
+  },
+  "modelFolderPersistentHint": {
+    "message": "ブラウザから求められたら、Chromeでは「サイトアクセス時は常に許可」、Edgeでは「アクセスするたびに確認する」（Chromeの「サイトアクセス時は常に許可」にあたる項目で、名前と違って次から確認されません）を選んでください。再起動後も追加のクリックは不要になります。"
+  },
+  "modelFolderPickFailed": {
+    "message": "フォルダを選べませんでした。"
+  },
+  "modelFolderIntegrityFailed": {
+    "message": "ファイル $FILE$ は公式の PLaMo モデルではないため、使いません。",
+    "placeholders": {
+      "file": {
+        "content": "$1"
+      }
+    }
+  },
+  "modelFolderIntegrityUnknownRevision": {
+    "message": "$FILE$ の SHA-256 は Sakutto が未対応の値です。新しい公式 PLaMo モデルの可能性があるため、Sakutto を更新してください。",
+    "placeholders": {
+      "file": {
+        "content": "$1"
+      }
+    }
+  },
+  "modelFolderEnableTabTitle": {
+    "message": "再起動後もフォルダへのアクセスを続ける"
+  },
+  "modelFolderEnableTabBody": {
+    "message": "Chromeでは「サイトアクセス時は常に許可」、Edgeでは「アクセスするたびに確認する」（Chromeの「サイトアクセス時は常に許可」にあたる項目で、名前と違って次から確認されません）を選ぶと、再起動後もこのフォルダは許可されたままになり、追加操作は不要です。"
+  },
+  "modelFolderEnableTabHint": {
+    "message": "Chromeの「今回のみ許可」やEdgeの「この時間を許可する」を選んだ場合は、再起動後に再度このページを開いてください。翻訳はブラウザ内のコピーで続きます。"
+  },
+  "modelFolderEnableTabDone": {
+    "message": "準備ができました。このタブは自動で閉じます。"
+  },
+  "modelFolderEnableOneClick": {
+    "message": "Sakuttoを有効化"
+  },
+  "modelFolderBenefitsLead": {
+    "message": "共有フォルダを使うと："
+  },
+  "modelFolderBenefitShare": {
+    "message": "他のプロフィールや別の Chromium ブラウザでもダウンロードなしですぐ使える"
+  },
+  "modelFolderBenefitSpace": {
+    "message": "モデルは1つだけなので容量を節約（$SIZE$）",
+    "placeholders": {
+      "size": {
+        "content": "$1"
+      }
+    }
+  },
+  "modelFolderBenefitKeep": {
+    "message": "ブラウザのデータを消してもファイルは残る。同じフォルダを選べば再ダウンロード不要"
+  },
+  "highQualityOffer": {
+    "message": "高精度モデル（2B・約1.81GB）を試せます。速度は端末によって異なります。"
+  },
+  "useHighQuality": {
+    "message": "使う"
+  },
+  "dismissHighQuality": {
+    "message": "今はしない"
+  },
+  "glossaryHeading": {
+    "message": "用語集"
+  },
+  "glossaryHelp": {
+    "message": "1行に「原文,訳語」と書いてください。サイトを選ぶと、そのサイトだけで使います。"
+  },
+  "glossaryGlobal": {
+    "message": "すべてのサイト"
+  },
+  "glossaryImport": {
+    "message": "CSV を読み込む"
+  },
+  "glossaryExport": {
+    "message": "CSV を書き出す"
+  },
+  "glossaryAddSite": {
+    "message": "サイトを追加"
+  },
+  "siteRulesHeading": {
+    "message": "サイトごとの翻訳"
+  },
+  "siteRuleAsk": {
+    "message": "毎回確認"
+  },
+  "siteRuleAlways": {
+    "message": "常に翻訳します"
+  },
+  "siteRuleNever": {
+    "message": "翻訳しません"
+  },
+  "siteRuleRemove": {
+    "message": "削除"
+  },
+  "noSiteRules": {
+    "message": "サイトごとの設定はまだありません。"
+  },
+  "siteHostLabel": {
+    "message": "ホスト名"
+  },
+  "cacheClear": {
+    "message": "翻訳キャッシュを削除"
+  },
+  "cacheCleared": {
+    "message": "翻訳キャッシュを削除しました。"
+  },
+  "cacheClearFailed": {
+    "message": "翻訳キャッシュを削除できませんでした。"
+  },
+  "idleLabel": {
+    "message": "モデルをメモリから解放するまで"
+  },
+  "idle1": {
+    "message": "1分"
+  },
+  "idle5": {
+    "message": "5分"
+  },
+  "idle15": {
+    "message": "15分"
+  },
+  "idleNever": {
+    "message": "解放しません"
+  },
+  "tierLabel": {
+    "message": "動作モード"
+  },
+  "tierAuto": {
+    "message": "自動"
+  },
+  "tierGpu": {
+    "message": "WebGPU"
+  },
+  "tierCpu8": {
+    "message": "CPU（8スレッド以上）"
+  },
+  "tierCpu4": {
+    "message": "CPU（4スレッド）"
+  },
+  "tierHelp": {
+    "message": "自動では、この PC に合うモードを選びます。"
+  },
+  "slowDeviceHint": {
+    "message": "この PC では PLaMo の翻訳に時間がかかります。段落ごとに、訳し終わった順に表示します。"
+  },
+  "errorPermission": {
+    "message": "サイトの権限が許可されませんでした。"
+  },
+  "siteHostInvalid": {
+    "message": "ホスト名を確認してください。"
+  },
+  "glossaryScopeLabel": {
+    "message": "適用範囲"
+  },
+  "listSeparator": {
+    "message": "、"
+  },
+  "openTyped": {
+    "message": "テキストを翻訳"
+  },
+  "typedLead": {
+    "message": "テキストを入力または貼り付けて、ページ翻訳と同じ PLaMo で翻訳します。端末の外へは送りません。"
+  },
+  "typedHeading": {
+    "message": "テキストの翻訳"
+  },
+  "typedSourceLanguageLabel": {
+    "message": "訳元の言語"
+  },
+  "typedDetectSource": {
+    "message": "自動で判定します"
+  },
+  "typedSourceLabel": {
+    "message": "翻訳するテキスト"
+  },
+  "typedPlaceholder": {
+    "message": "ここにテキストを入力するか、貼り付けてください。"
+  },
+  "typedCounter": {
+    "message": "$COUNT$ / $LIMIT$ 文字",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "typedTooLong": {
+    "message": "1回の翻訳には長すぎます。$LIMIT$ 文字以下にしてください。",
+    "placeholders": {
+      "limit": {
+        "content": "$1"
+      }
+    }
+  },
+  "typedDirectionHint": {
+    "message": "$LANGUAGE$ に翻訳します。ほかの言語は自動で判定します。",
+    "placeholders": {
+      "language": {
+        "content": "$1"
+      }
+    }
+  },
+  "typedSwap": {
+    "message": "翻訳する向きを入れ替える"
+  },
+  "typedTranslate": {
+    "message": "翻訳"
+  },
+  "typedTranslating": {
+    "message": "翻訳しています…"
+  },
+  "typedStop": {
+    "message": "中止"
+  },
+  "typedClear": {
+    "message": "クリア"
+  },
+  "typedCopy": {
+    "message": "コピー"
+  },
+  "typedCopied": {
+    "message": "コピーしました"
+  },
+  "typedCopyFailed": {
+    "message": "コピーできませんでした。訳文を選んでコピーしてください。"
+  },
+  "typedResultHeading": {
+    "message": "訳文"
+  },
+  "typedResultEmpty": {
+    "message": "貼り付けたテキストの隣に、PLaMo の訳文をここへ表示します。"
+  },
+  "typedRunHint": {
+    "message": "Ctrl+Enter（Mac は ⌘+Enter）でも翻訳できます。"
+  },
+  "typedFailed": {
+    "message": "翻訳できませんでした。入力したテキストはそのままです。もう一度お試しください。"
+  },
+  "typedNeedsConsent": {
+    "message": "PLaMo を使うには、最初に一度だけライセンスへの同意が必要です。同意するまでテキストは翻訳しません。"
+  },
+  "typedOpenOnboarding": {
+    "message": "ライセンスを確認して開始"
+  },
+  "typedModelMissing": {
+    "message": "PLaMo のモデルがまだこの端末にありません。"
+  },
+  "typedModelPartial": {
+    "message": "PLaMo のモデルのダウンロードが中断されています。"
+  },
+  "typedModelBusy": {
+    "message": "PLaMo のモデルをダウンロードしています。準備ができると翻訳できます。"
+  },
+  "typedModelError": {
+    "message": "PLaMo のモデルを読み込めませんでした。設定画面で確認してください。"
+  },
+  "typedDownloadModel": {
+    "message": "モデルをダウンロード"
+  },
+  "typedChromeOnlyTarget": {
+    "message": "テキストの翻訳は PLaMo だけで行います。PLaMo は $LANGUAGE$ への翻訳に対応していません。ここでは別の言語を選ぶか、ページ翻訳で Chrome の内蔵翻訳を使ってください。",
+    "placeholders": {
+      "language": {
+        "content": "$1"
+      }
+    }
+  },
+  "typedChromeOnlyNote": {
+    "message": "Chrome の内蔵翻訳は $LANGUAGES$ をページでのみ担当します。入力したテキストを渡すことはありません。",
+    "placeholders": {
+      "languages": {
+        "content": "$1"
+      }
+    }
+  },
+  "openPdf": {
+    "message": "この PDF を翻訳",
+    "description": "現在のタブが表示している PDF を拡張機能のリーダーで開くボタン。"
+  },
+  "openPdfHint": {
+    "message": "PDF を Sakutto で開き、ページのレイアウトを保ったまま翻訳します。"
+  },
+  "contextTranslatePdf": {
+    "message": "この PDF を Sakutto で翻訳",
+    "description": "PDF のタブで右クリックしたときのメニュー。"
+  },
+  "commandPdf": {
+    "message": "PDF を Sakutto で開く",
+    "description": "PDF を開くキーボードショートカットの名前。"
+  },
+  "pdfReaderTitle": {
+    "message": "PDF"
+  },
+  "pdfUntitled": {
+    "message": "document.pdf"
+  },
+  "pdfPreparing": {
+    "message": "文書を読み込んでいます…"
+  },
+  "pdfReading": {
+    "message": "$TOTAL$ ページ中 $PAGE$ ページ目を読み込み中",
+    "placeholders": {
+      "page": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "pdfTranslated": {
+    "message": "翻訳しました"
+  },
+  "pdfPageNoText": {
+    "message": "このページはスキャンまたは画像で、選べる文字がないため翻訳できません。",
+    "description": "スキャンや画像のみのページで、翻訳の代わりに表示する文。"
+  },
+  "pdfRenderFailed": {
+    "message": "このページを描画できませんでした。",
+    "description": "Shown on a page whose canvas could not be drawn."
+  },
+  "pdfNoText": {
+    "message": "この文書はスキャンまたは画像のみで、翻訳できる文字がありません。文字情報のある PDF を開くか、先に OCR をかけてください。"
+  },
+  "pdfTranslateFailed": {
+    "message": "この部分は翻訳できませんでした。"
+  },
+  "pdfMissing": {
+    "message": "文書が見つかりません。PDF のタブからもう一度開いてください。"
+  },
+  "pdfBroken": {
+    "message": "文書を開けませんでした。壊れているか、パスワードで保護されている可能性があります。"
+  },
+  "pdfTooLarge": {
+    "message": "このファイルは 200 MB を超えているため開けません。読み取れる文書の上限です。",
+    "description": "Shown when a local PDF is larger than the reader will open."
+  },
+  "pdfModelMissing": {
+    "message": "ページは表示していますが、翻訳には PLaMo のモデルが必要です。ダウンロードするとこの文書を翻訳できます。"
+  },
+  "pdfOpenFailed": {
+    "message": "この PDF を開けませんでした。ページを再読み込みしてから試してください。"
+  },
+  "pdfFileAccessDenied": {
+    "message": "この PDF はディスク上のファイルです。ブラウザの拡張機能の設定で「ファイルの URL へのアクセスを許可する」をオンにするか、リーダーでファイルを選んでください。"
+  },
+  "pdfCompare": {
+    "message": "並べて比較"
+  },
+  "pdfOriginalPane": {
+    "message": "原本"
+  },
+  "pdfTranslatedPane": {
+    "message": "翻訳"
+  },
+  "pdfChooseFile": {
+    "message": "PDF ファイルを選ぶ"
+  },
+  "pdfKeptAsIs": {
+    "message": "$COUNT$ か所はページの組版のまま残しました。数式、軸の目盛り、コードは元の組版のままです。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "pdfSelectHint": {
+    "message": "ページ上の文字を選ぶと、その部分だけを翻訳できます。"
+  },
+  "pdfSelectTranslate": {
+    "message": "選択した部分を翻訳"
+  },
+  "pdfSelectFailed": {
+    "message": "この部分は翻訳できませんでした。"
+  },
+  "pdfSelectClear": {
+    "message": "原文を表示"
+  },
+  "commandCompose": {
+    "message": "入力中のテキストを翻訳します"
+  },
+  "contextTranslateCompose": {
+    "message": "入力中のテキストを翻訳"
+  },
+  "shortcutCompose": {
+    "message": "$KEY$ で、入力中の欄のテキストを翻訳します。",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "onboardingReadyCompose": {
+    "message": "メッセージ欄で $KEY$ を押すと、入力中の文の訳がプレビューされ、置き換えるかどうかを選べます。",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "composeHelp": {
+    "message": "メッセージ欄にフォーカスがあるとき、欄のすみの「あA」ボタンかショートカットで、入力中の文の訳をプレビューできます。日本語の下書きは対になるもう一方の言語へ、それ以外は上で選んだ訳先へ訳します。「置き換える」を選ぶまで、欄の文は変わりません。"
+  },
+  "composeTitle": {
+    "message": "入力中の文を翻訳"
+  },
+  "composeIcon": {
+    "message": "入力中のテキストを翻訳"
+  },
+  "composeReplace": {
+    "message": "置き換える"
+  },
+  "composeUndo": {
+    "message": "元に戻す"
+  },
+  "composePending": {
+    "message": "翻訳しています…"
+  },
+  "composeFailed": {
+    "message": "この入力を翻訳できませんでした。"
+  },
+  "composeEmpty": {
+    "message": "入力すると訳が出ます"
+  },
+  "composeTooLong": {
+    "message": "この入力は長すぎて翻訳できません。"
+  },
+  "composeSwap": {
+    "message": "翻訳の向きを切り替えます"
+  },
+  "composeReplaced": {
+    "message": "置き換えました。元の文に戻せます。"
+  },
+  "composeInto": {
+    "message": "$LANGUAGE$ へ",
+    "placeholders": {
+      "language": {
+        "content": "$1"
+      }
+    }
+  },
+  "composeChromeOnly": {
+    "message": "PLaMo は $LANGUAGE$ に対応していないため翻訳できません。",
+    "placeholders": {
+      "language": {
+        "content": "$1"
+      }
+    }
+  },
+  "composeIconSetting": {
+    "message": "メッセージ欄に「あA」ボタンを表示する"
+  },
+  "composeIconSettingHelp": {
+    "message": "ボタンを消しても、ショートカットと右クリックメニューは使えます。"
+  },
+  "composeTargetSetting": {
+    "message": "入力中の翻訳の訳先"
+  },
+  "composeTargetAuto": {
+    "message": "自動（日本語の下書きはペアのもう一方、それ以外はページの訳先）"
+  },
+  "composeTargetSettingHelp": {
+    "message": "プレビューの言語メニューで変えた訳先も、ここに記憶されます。"
+  },
+  "composeTargetLabel": {
+    "message": "訳先"
+  },
+  "composeInstantSetting": {
+    "message": "ショートカット一発で翻訳して置き換える"
+  },
+  "composeInstantSettingHelp": {
+    "message": "プレビューを出さず、ショートカット一回で下書きを置き換えます。元に戻す操作は使えます。"
+  },
+  "composeNeedSetup": {
+    "message": "PLaMo の準備ができていません。セットアップを開いてライセンスに同意し、モデルを入手してください。"
+  },
+  "composeLoading": {
+    "message": "PLaMo のモデルを読み込んでいます。準備ができるとプレビューを出します。"
+  },
+  "composeIneligible": {
+    "message": "この欄は翻訳できません。"
+  },
+  "composeOpenSetup": {
+    "message": "セットアップを開く"
+  },
+  "composeStale": {
+    "message": "下書きが変わったので、プレビューが追いつくまで置き換えできません。"
+  },
+  "composeReplaceHint": {
+    "message": "$COMPOSE$ / $ENTER$ で置き換え",
+    "placeholders": {
+      "compose": {
+        "content": "$1"
+      },
+      "enter": {
+        "content": "$2"
+      }
+    }
+  },
+  "composeLangPair": {
+    "message": "$SOURCE$ → $TARGET$",
+    "placeholders": {
+      "source": {
+        "content": "$1"
+      },
+      "target": {
+        "content": "$2"
+      }
+    }
+  },
+  "composeAutoSource": {
+    "message": "自動"
+  },
+  "composePlacementSetting": {
+    "message": "入力中の翻訳バーの位置"
+  },
+  "composePlacementSettingHelp": {
+    "message": "すべてのサイトの既定です。バー左端の ⋮⋮ をドラッグすると、このページだけ好きな位置へ置けます。⋯ メニューでもこのサイトだけ上書きできます。"
+  },
+  "composePlacementAbove": {
+    "message": "入力欄の上"
+  },
+  "composePlacementBelow": {
+    "message": "入力欄の下"
+  },
+  "composePlacementCorner": {
+    "message": "画面の右下（フローティング）"
+  },
+  "composePlacementFree": {
+    "message": "自由に動かす"
+  },
+  "composePlacementMenu": {
+    "message": "バーの位置"
+  },
+  "composePlacementSite": {
+    "message": "このサイト"
+  },
+  "composePlacementFollowSettings": {
+    "message": "設定の位置に戻す（すべてのサイト）"
+  },
+  "composePlacementReset": {
+    "message": "元の位置に戻す"
+  },
+  "composePlacementHandle": {
+    "message": "ドラッグしてバーを好きな位置へ"
+  },
+  "engineFirefoxSingleThread": {
+    "message": "Firefox の拡張機能ページでは wasm のスレッドが使えないため、CPU の翻訳は 1 スレッドです。"
+  },
+  "engineLinuxWebGpuHintUnsupported": {
+    "message": "Linux の Chrome では、chrome://flags/#enable-unsafe-webgpu で WebGPU と Vulkan 機能を有効にして Chrome を再起動する必要があることがよくあります。それまでは CPU で翻訳します。"
+  },
+  "engineLinuxWebGpuHintUnavailable": {
+    "message": "WebGPU は有効ですが、使用できる GPU アダプタが見つかりませんでした。GPU 翻訳には shader-f16 が必要です。ドライバーと Vulkan の対応状況を chrome://gpu などで確認してください。それまでは CPU で翻訳します。"
+  },
+  "tierCpu1": {
+    "message": "CPU（1スレッド）"
+  },
+  "runtimeLocalServer": {
+    "message": "ローカルサーバー（実験的）"
+  },
+  "engineSourceLabel": {
+    "message": "翻訳エンジン"
+  },
+  "engineSourceInBrowser": {
+    "message": "内蔵（この端末）"
+  },
+  "engineSourceLocalServer": {
+    "message": "ローカルサーバー（実験的）"
+  },
+  "engineSourceHelp": {
+    "message": "既定は、この端末の内蔵エンジンです。"
+  },
+  "localServerUrlLabel": {
+    "message": "サーバー URL"
+  },
+  "localServerModelLabel": {
+    "message": "モデル"
+  },
+  "localServerApiKeyLabel": {
+    "message": "APIキー（任意）"
+  },
+  "localServerTimeoutLabel": {
+    "message": "タイムアウト（秒）"
+  },
+  "localServerTestButton": {
+    "message": "接続を試す"
+  },
+  "localServerTestOk": {
+    "message": "接続できました。"
+  },
+  "localServerTestFail": {
+    "message": "このサーバーは使えませんでした。"
+  },
+  "localServerModelsEmpty": {
+    "message": "（一覧なし。名前を入力）"
+  },
+  "localServerPresetMlx": {
+    "message": "mlx_lm.server"
+  },
+  "localServerPresetLmStudio": {
+    "message": "LM Studio"
+  },
+  "localServerPresetHelp": {
+    "message": "プリセットは URL だけを入れます。"
+  },
+  "localServerNonLocalWarning": {
+    "message": "このアドレスはこの端末ではありません。ページの本文がそこに送られます。了解しました。"
+  },
+  "localServerPermissionDenied": {
+    "message": "ブラウザがこのアドレスへのアクセスを許可しませんでした。"
+  },
+  "localServerHelp": {
+    "message": "この端末の OpenAI 互換サーバー（mlx_lm.server または LM Studio）へ、Sakutto と同じプロンプトを送ります。"
+  },
+  "localServerUnreachable": {
+    "message": "ローカルサーバーに届きませんでした。設定を開き、起動しているか確認してください。"
+  },
+  "localServerModelMissing": {
+    "message": "サーバーに該当するモデルがありません。モデルを読み込むか、設定で選んでください。"
+  },
+  "localServerTimeout": {
+    "message": "ローカルサーバーが時間切れになりました。原文のままにしています。"
+  },
+  "localServerFailed": {
+    "message": "ローカルサーバーでは翻訳できませんでした。設定を開いてください。原文のままにしています。"
+  },
+  "diagBackendLocalServer": {
+    "message": "ローカルサーバー（実験的）"
+  },
+  "privacyBodyLocalServer": {
+    "message": "実験的機能です。ローカルサーバーを選ぶと、文字は設定したアドレス（既定はこの端末）にだけ送ります。翻訳の精度は保証せず、内蔵エンジンと訳が異なり、誤訳が出ることがあります。開発者は受け取りません。"
+  },
+  "localServerLicenseNote": {
+    "message": "そのサーバーに読み込む他のモデルのライセンスは利用者の責任です。PLaMo の重みは PLaMo Community License のままです。"
+  },
+  "localServerParallelLabel": {
+    "message": "同時リクエスト数"
+  },
+  "localServerParallelHelp": {
+    "message": "サーバーが同時に処理する補完の数（1〜16）です。初期値は 8 です。ページ側は余裕を持って送り、空きスロットを待たせません。"
+  },
+  "localServerTestOkUnlisted": {
+    "message": "接続できました。Completions は使えます。/v1/models は空でした。入力したモデル名をそのまま使います（一覧では確認していません）。"
+  },
+  "localServerExperimental": {
+    "message": "実験的機能：翻訳の精度は保証しません。内蔵エンジンと訳が異なり、誤訳が出ることがあります。"
+  },
+  "localServerExperimentalConfirm": {
+    "message": "このエンジンは実験的機能です。精度は保証せず、内蔵エンジンと訳が異なり、誤訳が出ることがあります。それでもローカルサーバーを使いますか？"
+  },
+  "localServerExperimentalUse": {
+    "message": "ローカルサーバーを使う"
+  },
+  "localServerExperimentalKeep": {
+    "message": "内蔵のまま"
+  },
+  "localServerDetails": {
+    "message": "詳しく"
+  },
+  "localServerAdvanced": {
+    "message": "詳細設定"
+  },
+  "localServerRemoteConfirmRequired": {
+    "message": "このアドレスはこの端末ではありません。接続を試す前に、下の確認にチェックしてください。"
+  },
+  "onboardingLocalServerNote": {
+    "message": "設定で実験的なローカルサーバーをオンにできます。そのときは本文を設定したアドレスにだけ送り、精度は保証しません。"
+  },
+  "localServerUrlHelp": {
+    "message": "mlx_lm.server の既定はポート 8080、LM Studio の既定はポート 1234 です。"
+  },
+  "localServerModelHelp": {
+    "message": "そのサーバーに読み込んだモデル名です。"
+  },
+  "diagConcurrent": {
+    "message": "同時リクエスト"
+  },
+  "diagRuntime": {
+    "message": "状態"
+  },
+  "videoCaptionsSetting": {
+    "message": "動画の字幕を翻訳する"
+  },
+  "videoCaptionsSettingHelp": {
+    "message": "オンにすると、YouTube（ライブを含む）と X の、字幕がある動画を再生中に端末内で翻訳します。設定を入れるときに、それらのサイトへのアクセス許可を求めます。標準的な字幕がある別のサイトは、下の一覧に追加できます。字幕がない動画には何も出しません。確かな訳が出ない行は原文のまま残します。"
+  },
+  "videoCaptionsDisplayLabel": {
+    "message": "字幕の表示"
+  },
+  "videoCaptionsBilingual": {
+    "message": "原文と訳を並べる"
+  },
+  "videoCaptionsReplace": {
+    "message": "訳だけを表示する"
+  },
+  "videoCaptionsDisplayHelp": {
+    "message": "原文を残すと学習しやすく、誤訳にも気づきやすくなります。"
+  },
+  "videoCaptionsLabel": {
+    "message": "翻訳字幕"
+  },
+  "videoCaptionsPending": {
+    "message": "字幕を翻訳しています…"
+  },
+  "videoCaptionsShowOriginal": {
+    "message": "原文の字幕を表示"
+  },
+  "videoCaptionsHideOriginal": {
+    "message": "原文の字幕を隠す"
+  },
+  "videoCaptionsPermissionDenied": {
+    "message": "YouTube と X へのアクセスが許可されませんでした。"
+  },
+  "videoCaptionsShowOriginalSetting": {
+    "message": "原文の行を表示する"
+  },
+  "videoCaptionsOriginalToggleSetting": {
+    "message": "プレーヤー上の原文ボタンを表示"
+  },
+  "videoCaptionsOriginalToggleHelp": {
+    "message": "オフにすると動画の上には出しません。原文の表示はこの画面から切り替えられます。"
+  },
+  "videoCaptionsSizeLabel": {
+    "message": "字幕の大きさ"
+  },
+  "videoCaptionsSizeHelp": {
+    "message": "大きさはプレーヤーに合わせて変わります（全画面・シアターを含む）。スライダーを動かすとプレビューが変わります。"
+  },
+  "translationPopupSizeLabel": {
+    "message": "翻訳ポップアップの文字サイズ"
+  },
+  "translationPopupSizeHelp": {
+    "message": "ホバー・選択・作文の翻訳ポップアップの文字サイズを変更します。動画の字幕は字幕用の設定で変更します。"
+  },
+  "plainTextLineBreaksLabel": {
+    "message": "訳文の改行"
+  },
+  "plainTextLineBreaksHelp": {
+    "message": "書類や本の貼り付け、OCR の文章では文の途中に改行が入ることがあります。翻訳時はそれらをつなげ、文末・見出し・空行の位置だけを訳文の改行として反映します。最後のオプションは、テキスト入力欄の原文の改行すべてに印をつけ（文の途中の改行は ↵ と表示）、翻訳前に見つけて直せるようにします。ページ翻訳は変わりません。"
+  },
+  "plainTextLineBreaksNone": {
+    "message": "改行しない（従来どおり）"
+  },
+  "plainTextLineBreaksKeep": {
+    "message": "段落で改行"
+  },
+  "plainTextLineBreaksBlank": {
+    "message": "原文の改行の位置で、訳文は改行を2回入れる（空行を入れる）"
+  },
+  "plainTextLineBreaksWider": {
+    "message": "段落で改行し、入力欄の原文の改行に印をつける"
+  },
+  "typedSourceBreakLegend": {
+    "message": "↵ は文の途中の改行を、細い線は翻訳時にそのまま残す改行を示します。"
+  },
+  "videoCaptionsCustomSitesLabel": {
+    "message": "独自の字幕サイト"
+  },
+  "videoCaptionsCustomSitesHelp": {
+    "message": "YouTube と X 以外のドメインを追加できます。HTML5 の video トラック、WebVTT、または画面上の標準的な字幕要素がある場合にだけ翻訳します。独自の描画だけで字幕を出しているサイトには対応しません。追加するときに、そのドメインへのアクセスを求めます。"
+  },
+  "videoCaptionsCustomHostPlaceholder": {
+    "message": "example.com"
+  },
+  "videoCaptionsCustomHostAdd": {
+    "message": "追加"
+  },
+  "videoCaptionsCustomHostRemove": {
+    "message": "削除"
+  },
+  "videoCaptionsCustomHostSubdomains": {
+    "message": "サブドメインも含める"
+  },
+  "videoCaptionsCustomHostInvalid": {
+    "message": "example.com のようなドメインを入力してください。使えるワイルドカードは先頭の * だけです。"
+  },
+  "videoCaptionsCustomHostDenied": {
+    "message": "そのサイトへのアクセスが許可されませんでした。"
+  },
+  "videoCaptionsPositionReset": {
+    "message": "位置をリセット"
+  },
+  "videoCaptionsPositionHelp": {
+    "message": "翻訳字幕を長押しすると、プレーヤー内で場所を変えられます。YouTube と X はそれぞれ位置を覚え、全画面やシアターでも保ちます。このボタンで下部の元の位置に戻します。"
+  },
+  "pdfOverflow": {
+    "message": "$COUNT$ か所は枠に入りませんでした。印を開くと訳を読めます。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "pdfFailedCount": {
+    "message": "$COUNT$ か所は翻訳できませんでした。",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    },
+    "description": "Toolbar note when some blocks could not be translated."
+  },
+  "pdfOverflowOpen": {
+    "message": "訳を表示"
+  },
+  "gmailBannerDetected": {
+    "message": "このメールは$LANG$で書かれているようです。",
+    "placeholders": {
+      "lang": {
+        "content": "$1"
+      }
+    }
+  },
+  "gmailBannerTranslate": {
+    "message": "$TARGET$に翻訳",
+    "placeholders": {
+      "target": {
+        "content": "$1"
+      }
+    }
+  },
+  "gmailBannerShowOriginal": {
+    "message": "原文を表示"
+  },
+  "gmailBannerTranslating": {
+    "message": "このメールを翻訳しています…"
+  },
+  "gmailBannerFailed": {
+    "message": "このメールを翻訳できませんでした。"
+  },
+  "gmailBannerRegion": {
+    "message": "メールの翻訳"
+  },
+  "mailBannerAccessNeeded": {
+    "message": "このサイトでメール翻訳を使うにはアクセス許可が必要です。"
+  },
+  "mailBannerEnableForSite": {
+    "message": "このサイトでメール翻訳を有効にする"
+  },
+  "mailBannerPermissionDenied": {
+    "message": "メール翻訳にはメールサイトへのアクセス許可が必要です。"
+  },
+  "settingsGmailBanner": {
+    "message": "Gmail と Outlook のメールを翻訳する"
+  },
+  "settingsGmailBannerHelp": {
+    "message": "オンにすると、別の言語で書かれた Gmail または Outlook のメールを開いたとき、本文の上に小さなバナーが出ます。翻訳はクリックしたときだけ行います。メールサイトへのアクセス許可が必要です。ポップアップかサイト一覧から許可してください。"
+  },
+  "gmailBannerTranslated": {
+    "message": "翻訳済み: $SOURCE$ → $TARGET$",
+    "placeholders": {
+      "source": {
+        "content": "$1"
+      },
+      "target": {
+        "content": "$2"
+      }
+    }
+  },
+  "gmailBannerShowTranslation": {
+    "message": "翻訳を表示"
+  },
+  "gmailBannerMenu": {
+    "message": "翻訳設定"
+  },
+  "gmailBannerTranslateNow": {
+    "message": "$LANG$を翻訳する",
+    "placeholders": {
+      "lang": {
+        "content": "$1"
+      }
+    }
+  },
+  "gmailBannerAlwaysTranslate": {
+    "message": "自動的に$LANG$を翻訳する",
+    "placeholders": {
+      "lang": {
+        "content": "$1"
+      }
+    }
+  },
+  "gmailBannerNeverTranslate": {
+    "message": "今後$LANG$を翻訳しない",
+    "placeholders": {
+      "lang": {
+        "content": "$1"
+      }
+    }
+  },
+  "settingsGmailAutoLangs": {
+    "message": "常に翻訳する言語"
+  },
+  "settingsGmailNeverLangs": {
+    "message": "翻訳しない言語"
+  },
+  "settingsGmailNoAutoLangs": {
+    "message": "常に翻訳する言語はありません。"
+  },
+  "settingsGmailNoNeverLangs": {
+    "message": "翻訳しない言語はありません。"
+  },
+  "settingsGmailClearLangs": {
+    "message": "クリア"
+  },
+  "settingsGmailRemoveLang": {
+    "message": "削除"
+  },
+  "allSitesSetting": {
+    "message": "ページを開いたらすぐSakuttoを使えるようにする（おすすめ）",
+    "description": "Options toggle that asks for optional http/https host access once."
+  },
+  "allSitesSettingHelp": {
+    "message": "Sakuttoは最初の権限をできるだけ弱くしているので、オフのままだとページごとにアイコン・右クリック・ショートカットのどれかを一度使うまで、選択翻訳のボタンやページ内のショートカットが動きません。もっと快適に使うなら、オンにするのがおすすめです。全サイトへのアクセスを1回許可するだけで、どのページでも開いてすぐ使えます。YouTubeの字幕翻訳やメールの翻訳バナーも、サイトごとに許可しなくても使えるようになります。翻訳は今までどおり端末の中だけで行い、オフにすればいつでも取り消せます。",
+    "description": "One-line explanation of the all-sites toggle."
+  },
+  "allSitesPermissionDenied": {
+    "message": "すべてのサイトへのアクセスが許可されなかったため、この設定はオフのままです。",
+    "description": "Shown when the browser prompt for all-sites access is denied."
+  },
+  "allSitesPopupHint": {
+    "message": "すべてのサイトへのアクセスをオンにすると、このポップアップを開かなくても毎回、選択翻訳ボタンとショートカットが使えます。",
+    "description": "One-line suggestion in the toolbar popup while all-sites access is off."
+  },
+  "allSitesPopupEnable": {
+    "message": "オンにする",
+    "description": "Button in the toolbar popup that turns on all-sites access."
+  }
+}

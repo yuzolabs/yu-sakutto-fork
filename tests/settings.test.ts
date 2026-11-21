@@ -1,0 +1,771 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_MODEL_ID, HIGH_QUALITY_MODEL_ID } from '@/engine/model/catalog';
+import { MAX_GLOSSARY_ENTRIES } from '@/shared/glossary';
+import { displayLanguage, resolveTargetLanguage } from '@/shared/languages';
+import { defaultShortcutEnabled } from '@/shared/shortcuts';
+import {
+  DEFAULT_SETTINGS,
+  LEGACY_NOTICE_VERSION,
+  PLAMO_LICENSE_VERSION,
+  PLAMO_NOTICE_VERSION,
+  SETTINGS_SCHEMA_VERSION,
+  createDefaultSettings,
+  gmailTranslateLanguagePreference,
+  isGmailAutoTranslateLanguage,
+  isGmailNeverTranslateLanguage,
+  isTierPreference,
+  normalizeGmailLanguageList,
+  normalizePlainTextLineBreaks,
+  normalizeTranslationPopupSize,
+  normalizeTranslationPopupWidth,
+  normalizeVideoCaptionSize,
+  normalizeVideoCaptionPositions,
+  needsLicenseReconsent,
+  normalizeSettings,
+  removeGmailTranslateLanguage,
+  toggleGmailAutoTranslateLanguage,
+  toggleGmailNeverTranslateLanguage,
+  type Settings,
+} from '@/shared/settings';
+
+function stored(overrides: Partial<Settings> = {}): Settings {
+  return {
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
+    targetLanguage: 'en',
+    form: 'polite',
+    display: 'replace',
+    translationPopupSize: 100,
+    translationPopupWidth: 0,
+    plainTextLineBreaks: 'none',
+    consent: null,
+    highQualityDismissed: false,
+    sharedFolderOfferDismissed: false,
+    glossary: [],
+    idleMinutes: 5,
+    tier: 'auto',
+    pace: 'quality',
+    composeIcon: true,
+    shortcutsEnabled: defaultShortcutEnabled(),
+    composeTargetLanguage: null,
+    composeInstantReplace: false,
+    composePlacement: 'above',
+    selectedModelId: DEFAULT_MODEL_ID,
+    engineSource: 'in-browser',
+    localServerUrl: 'http://127.0.0.1:8080/v1',
+    localServerModel: '',
+    localServerApiKey: '',
+    localServerTimeoutMs: 120_000,
+    localServerAllowRemote: false,
+    localServerParallel: 8,
+    localServerExperimentalAck: false,
+    translateVideoCaptions: false,
+    videoCaptionDisplay: 'bilingual',
+    videoCaptionSize: 80,
+    videoCaptionOriginalToggle: true,
+    videoCaptionPositions: {},
+    captionCustomHosts: [],
+    gmailTranslateBanner: true,
+    gmailAutoTranslateLangs: [],
+    gmailNeverTranslateLangs: [],
+    ...overrides,
+  };
+}
+
+describe('settings defaults', () => {
+  it('accepts the single-thread CPU tier used on Firefox', () => {
+    expect(isTierPreference('c1')).toBe(true);
+    expect(isTierPreference('c8')).toBe(true);
+    expect(isTierPreference('gpu')).toBe(false);
+  });
+
+  it('uses the UI language with polite form and replacement display', () => {
+    expect(createDefaultSettings('fr-FR')).toEqual(stored({ targetLanguage: 'fr' }));
+    expect(DEFAULT_SETTINGS.targetLanguage).toBe('en');
+  });
+
+  it('falls back to English when the UI language is not supported', () => {
+    expect(createDefaultSettings('cs-CZ').targetLanguage).toBe('en');
+    expect(createDefaultSettings('pt-BR').targetLanguage).toBe('en');
+    expect(createDefaultSettings('').targetLanguage).toBe('en');
+    expect(resolveTargetLanguage('not-a-language')).toBe('en');
+  });
+
+  it('maps Chinese UI languages to the supported scripts', () => {
+    expect(resolveTargetLanguage('zh-CN')).toBe('zh-hans');
+    expect(resolveTargetLanguage('zh-TW')).toBe('zh-hant');
+    expect(resolveTargetLanguage('zh-HK')).toBe('zh-hant');
+    expect(resolveTargetLanguage('zh-Hant-HK')).toBe('zh-hant');
+  });
+
+  it('falls back to the raw tag when a page language cannot be displayed', () => {
+    expect(displayLanguage('en', 'ja')).toBe('英語');
+    expect(displayLanguage('not-a-language', 'en')).toBe('not-a-language');
+    expect(displayLanguage('', 'en')).toBe('');
+  });
+
+  it('leaves the shared-folder move offer visible until the user hides it', () => {
+    expect(
+      normalizeSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION, targetLanguage: 'en' }, 'en-US')
+        .sharedFolderOfferDismissed,
+    ).toBe(false);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          sharedFolderOfferDismissed: true,
+        },
+        'en-US',
+      ).sharedFolderOfferDismissed,
+    ).toBe(true);
+  });
+
+  it('defaults shortcuts on, compose target automatic, and instant replace off', () => {
+    const settings = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        targetLanguage: 'en',
+      },
+      'en-US',
+    );
+    expect(settings.shortcutsEnabled).toEqual(defaultShortcutEnabled());
+    expect(settings.composeTargetLanguage).toBeNull();
+    expect(settings.composeInstantReplace).toBe(false);
+    expect(settings.composePlacement).toBe('above');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          composePlacement: 'corner',
+        },
+        'en-US',
+      ).composePlacement,
+    ).toBe('corner');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          composePlacement: 'side',
+        },
+        'en-US',
+      ).composePlacement,
+    ).toBe('above');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          shortcutsEnabled: { 'toggle-bilingual': false },
+          composeTargetLanguage: 'ko',
+          composeInstantReplace: true,
+        },
+        'en-US',
+      ),
+    ).toMatchObject({
+      shortcutsEnabled: { ...defaultShortcutEnabled(), 'toggle-bilingual': false },
+      composeTargetLanguage: 'ko',
+      composeInstantReplace: true,
+    });
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          composeTargetLanguage: 'pt',
+        },
+        'en-US',
+      ).composeTargetLanguage,
+    ).toBeNull();
+  });
+
+  it('keeps a selected high-accuracy model and repairs a missing one', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'ja',
+        },
+        'ja-JP',
+      ).selectedModelId,
+    ).toBe(DEFAULT_MODEL_ID);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'ja',
+          selectedModelId: HIGH_QUALITY_MODEL_ID,
+        },
+        'ja-JP',
+      ).selectedModelId,
+    ).toBe(HIGH_QUALITY_MODEL_ID);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'ja',
+          selectedModelId: 'not-a-model',
+        },
+        'ja-JP',
+      ).selectedModelId,
+    ).toBe(DEFAULT_MODEL_ID);
+  });
+
+  it('defaults to the built-in engine and a loopback mlx_lm.server URL', () => {
+    const settings = normalizeSettings(
+      { schemaVersion: SETTINGS_SCHEMA_VERSION, targetLanguage: 'en' },
+      'en-US',
+    );
+    expect(settings.engineSource).toBe('in-browser');
+    expect(settings.localServerUrl).toBe('http://127.0.0.1:8080/v1');
+    expect(settings.localServerModel).toBe('');
+    expect(settings.localServerApiKey).toBe('');
+    expect(settings.localServerTimeoutMs).toBe(120_000);
+    expect(settings.localServerAllowRemote).toBe(false);
+    expect(settings.localServerParallel).toBe(8);
+    expect(settings.localServerExperimentalAck).toBe(false);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          engineSource: 'local-server',
+          localServerUrl: 'http://127.0.0.1:1234',
+          localServerModel: 'pfnet/plamo-3-translate-0.8b-MLX-4bit',
+          localServerAllowRemote: true,
+        },
+        'en-US',
+      ),
+    ).toMatchObject({
+      engineSource: 'local-server',
+      localServerUrl: 'http://127.0.0.1:1234/v1',
+      localServerModel: 'pfnet/plamo-3-translate-0.8b-MLX-4bit',
+      localServerAllowRemote: true,
+    });
+  });
+
+  it('defaults video caption translation off and bilingual display on', () => {
+    const settings = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        targetLanguage: 'en',
+      },
+      'en-US',
+    );
+    expect(settings.translateVideoCaptions).toBe(false);
+    expect(settings.videoCaptionDisplay).toBe('bilingual');
+    expect(settings.videoCaptionSize).toBe(80);
+    expect(settings.videoCaptionOriginalToggle).toBe(true);
+    expect(settings.videoCaptionPositions).toEqual({});
+    expect(settings.captionCustomHosts).toEqual([]);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          translateVideoCaptions: true,
+          videoCaptionDisplay: 'replace',
+        },
+        'en-US',
+      ),
+    ).toMatchObject({ translateVideoCaptions: true, videoCaptionDisplay: 'replace' });
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          videoCaptionDisplay: 'side-by-side',
+        },
+        'en-US',
+      ).videoCaptionDisplay,
+    ).toBe('bilingual');
+  });
+
+  it('defaults the Gmail banner on and keeps an explicit opt-out', () => {
+    const defaults = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        targetLanguage: 'en',
+      },
+      'en-US',
+    );
+    expect(defaults.gmailTranslateBanner).toBe(true);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          gmailTranslateBanner: false,
+        },
+        'en-US',
+      ).gmailTranslateBanner,
+    ).toBe(false);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          gmailTranslateBanner: 'off',
+        },
+        'en-US',
+      ).gmailTranslateBanner,
+    ).toBe(true);
+  });
+
+  it('normalizes Gmail auto/never language lists and keeps them mutually exclusive', () => {
+    const settings = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        targetLanguage: 'en',
+        gmailAutoTranslateLangs: ['EN', 'fr', 'en', 'xx', 7],
+        gmailNeverTranslateLangs: ['fr', 'ja', 'ja'],
+      },
+      'en-US',
+    );
+    expect(settings.gmailAutoTranslateLangs).toEqual(['en']);
+    expect(settings.gmailNeverTranslateLangs).toEqual(['fr', 'ja']);
+  });
+
+  it('toggles language rules without allowing the same language in both lists', () => {
+    const empty = { auto: [] as string[], never: [] as string[] };
+    expect(normalizeGmailLanguageList(['pt-BR', 'zh-Hant'])).toEqual(['pt', 'zh-hant']);
+
+    const auto = toggleGmailAutoTranslateLanguage('en', empty);
+    expect(auto).toEqual({ auto: ['en'], never: [] });
+    expect(isGmailAutoTranslateLanguage('en', auto.auto)).toBe(true);
+    expect(isGmailNeverTranslateLanguage('en', auto.never)).toBe(false);
+    expect(gmailTranslateLanguagePreference('en', auto)).toBe('auto');
+
+    const never = toggleGmailNeverTranslateLanguage('en', auto);
+    expect(never).toEqual({ auto: [], never: ['en'] });
+    expect(gmailTranslateLanguagePreference('en', never)).toBe('never');
+
+    const backToAuto = toggleGmailAutoTranslateLanguage('en', never);
+    expect(backToAuto).toEqual({ auto: ['en'], never: [] });
+
+    expect(toggleGmailAutoTranslateLanguage('en', backToAuto)).toEqual({
+      auto: [],
+      never: [],
+    });
+    expect(toggleGmailNeverTranslateLanguage('en', never)).toEqual({
+      auto: [],
+      never: [],
+    });
+    expect(removeGmailTranslateLanguage('en', backToAuto)).toEqual({
+      auto: [],
+      never: [],
+    });
+  });
+
+  it('clamps caption size and keeps only valid custom hosts', () => {
+    expect(normalizeVideoCaptionSize(undefined)).toBe(80);
+    expect(normalizeVideoCaptionSize(200)).toBe(150);
+    expect(normalizeVideoCaptionSize(10)).toBe(50);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          videoCaptionSize: 91.4,
+          captionCustomHosts: ['Example.COM', 'file://nope', '*.ok.dev', 'https://ok.dev/path'],
+        },
+        'en-US',
+      ),
+    ).toMatchObject({
+      videoCaptionSize: 91,
+      captionCustomHosts: ['example.com', '*.ok.dev'],
+    });
+  });
+
+  it('defaults translation popup text to 100% and clamps stored values', () => {
+    expect(DEFAULT_SETTINGS.translationPopupSize).toBe(100);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+        },
+        'en-US',
+      ).translationPopupSize,
+    ).toBe(100);
+    expect(normalizeTranslationPopupSize(undefined)).toBe(100);
+    expect(normalizeTranslationPopupSize(50)).toBe(80);
+    expect(normalizeTranslationPopupSize(250)).toBe(200);
+    expect(normalizeTranslationPopupSize('135.6')).toBe(136);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          translationPopupSize: 165,
+        },
+        'en-US',
+      ).translationPopupSize,
+    ).toBe(165);
+  });
+
+  it('defaults pasted line breaks to none and keeps only the known modes', () => {
+    expect(DEFAULT_SETTINGS.plainTextLineBreaks).toBe('none');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+        },
+        'en-US',
+      ).plainTextLineBreaks,
+    ).toBe('none');
+    expect(normalizePlainTextLineBreaks(undefined)).toBe('none');
+    expect(normalizePlainTextLineBreaks('keep')).toBe('keep');
+    expect(normalizePlainTextLineBreaks('blank')).toBe('blank');
+    expect(normalizePlainTextLineBreaks('wider')).toBe('wider');
+    expect(normalizePlainTextLineBreaks('side-by-side')).toBe('none');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          plainTextLineBreaks: 'blank',
+        },
+        'en-US',
+      ).plainTextLineBreaks,
+    ).toBe('blank');
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          plainTextLineBreaks: 'invalid',
+        },
+        'en-US',
+      ).plainTextLineBreaks,
+    ).toBe('none');
+  });
+
+  it('stores a selection popup width in em and treats zero as automatic', () => {
+    expect(DEFAULT_SETTINGS.translationPopupWidth).toBe(0);
+    expect(normalizeTranslationPopupWidth(undefined)).toBe(0);
+    expect(normalizeTranslationPopupWidth('nope')).toBe(0);
+    expect(normalizeTranslationPopupWidth(0)).toBe(0);
+    expect(normalizeTranslationPopupWidth(8)).toBe(14);
+    expect(normalizeTranslationPopupWidth('21.456')).toBe(21.46);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          translationPopupWidth: 18,
+        },
+        'en-US',
+      ).translationPopupWidth,
+    ).toBe(18);
+  });
+
+  it('keeps caption overlay positions per site without bumping the schema', () => {
+    expect(SETTINGS_SCHEMA_VERSION).toBe(1);
+    expect(normalizeVideoCaptionPositions(undefined)).toEqual({});
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          videoCaptionPositions: {
+            youtube: { x: 25.44, y: 40.12 },
+            x: { x: -10, y: 180 },
+            other: { x: 'nope' },
+            vimeo: { x: 10, y: 10 },
+          },
+        },
+        'en-US',
+      ).videoCaptionPositions,
+    ).toEqual({
+      youtube: { x: 25.4, y: 40.1 },
+      x: { x: 0, y: 100 },
+    });
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          videoCaptionPositions: {},
+        },
+        'en-US',
+      ).videoCaptionPositions,
+    ).toEqual({});
+  });
+
+  it('defaults the on-player original toggle on for a record that predates the setting', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+        },
+        'en-US',
+      ).videoCaptionOriginalToggle,
+    ).toBe(true);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          videoCaptionOriginalToggle: false,
+        },
+        'en-US',
+      ).videoCaptionOriginalToggle,
+    ).toBe(false);
+  });
+
+  it('defaults the compose icon on for a record that predates the setting', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+        },
+        'en-US',
+      ).composeIcon,
+    ).toBe(true);
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'en',
+          composeIcon: false,
+        },
+        'en-US',
+      ).composeIcon,
+    ).toBe(false);
+  });
+
+  it('keeps valid stored values and repairs invalid ones', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'ko',
+          form: 'plain',
+          display: 'bilingual',
+        },
+        'en-US',
+      ),
+    ).toEqual(
+      stored({
+        targetLanguage: 'ko',
+        form: 'plain',
+        display: 'bilingual',
+      }),
+    );
+
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'xx',
+          form: 'verbose',
+          display: 'side-by-side',
+        },
+        'en-US',
+      ),
+    ).toEqual(stored());
+  });
+
+  it('ignores stored values written by another schema version', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION + 1,
+          targetLanguage: 'ko',
+          form: 'plain',
+          display: 'bilingual',
+        },
+        'ja-JP',
+      ),
+    ).toEqual(createDefaultSettings('ja-JP'));
+
+    expect(normalizeSettings({ targetLanguage: 'ko' }, 'ja-JP').targetLanguage).toBe('ja');
+  });
+
+  it('drops consent that does not name the bundled license text', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          consent: {
+            license: 'plamo-community',
+            acceptedAt: '2026-11-05T00:00:00.000Z',
+            ageNoticeShown: true,
+          },
+        },
+        'ja',
+      ).consent,
+    ).toBeNull();
+  });
+
+  it('keeps a Chrome-only target and a recorded license consent', () => {
+    const acceptedAt = '2026-11-05T00:00:00.000Z';
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'pt',
+          consent: {
+            license: 'plamo-community',
+            version: PLAMO_LICENSE_VERSION,
+            notice: PLAMO_NOTICE_VERSION,
+            acceptedAt,
+            ageNoticeShown: true,
+          },
+          glossary: [{ source: 'Sign in', target: 'ログイン' }],
+          idleMinutes: 0,
+          tier: 'c4',
+          highQualityDismissed: true,
+        },
+        'en-US',
+      ),
+    ).toEqual(
+      stored({
+        targetLanguage: 'pt',
+        consent: {
+          license: 'plamo-community',
+          version: PLAMO_LICENSE_VERSION,
+          notice: PLAMO_NOTICE_VERSION,
+          acceptedAt,
+          ageNoticeShown: true,
+        },
+        glossary: [{ source: 'Sign in', target: 'ログイン' }],
+        idleMinutes: 0,
+        tier: 'c4',
+        highQualityDismissed: true,
+      }),
+    );
+  });
+
+  it('keeps Easy Japanese as a saved target', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          targetLanguage: 'ja-easy',
+        },
+        'en-US',
+      ).targetLanguage,
+    ).toBe('ja-easy');
+  });
+
+  it('keeps a 5000-entry glossary when repairing other settings', () => {
+    const glossary = Array.from({ length: MAX_GLOSSARY_ENTRIES }, (_, index) => ({
+      source: `term-${String(index)}`,
+      target: `訳-${String(index)}`,
+    }));
+    const settings = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        targetLanguage: 'xx',
+        glossary,
+      },
+      'en-US',
+    );
+
+    expect(settings.glossary).toEqual(glossary);
+    expect(settings.glossary).toHaveLength(MAX_GLOSSARY_ENTRIES);
+    expect(settings.targetLanguage).toBe('en');
+  });
+
+  it('keeps consent written before the age notice was renamed', () => {
+    const acceptedAt = '2026-11-05T00:00:00.000Z';
+    const consent = normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        consent: {
+          license: 'plamo-community',
+          version: PLAMO_LICENSE_VERSION,
+          acceptedAt,
+          guardian: true,
+        },
+      },
+      'ja',
+    ).consent;
+
+    expect(consent).toEqual({
+      license: 'plamo-community',
+      version: PLAMO_LICENSE_VERSION,
+      notice: LEGACY_NOTICE_VERSION,
+      acceptedAt,
+      ageNoticeShown: true,
+    });
+    expect(consent).not.toHaveProperty('guardian');
+    // A legacy record still counts as consent to the same license text.
+    expect(needsLicenseReconsent({ consent })).toBe(true);
+  });
+
+  it('does not treat a false guardian flag as a recorded consent', () => {
+    expect(
+      normalizeSettings(
+        {
+          schemaVersion: SETTINGS_SCHEMA_VERSION,
+          consent: {
+            license: 'plamo-community',
+            version: PLAMO_LICENSE_VERSION,
+            acceptedAt: '2026-11-05T00:00:00.000Z',
+            guardian: false,
+          },
+        },
+        'ja',
+      ).consent,
+    ).toBeNull();
+  });
+});
+
+describe('license notice re-consent', () => {
+  const acceptedAt = '2026-11-05T00:00:00.000Z';
+
+  function consentWith(extra: Record<string, unknown>): Settings {
+    return normalizeSettings(
+      {
+        schemaVersion: SETTINGS_SCHEMA_VERSION,
+        consent: {
+          license: 'plamo-community',
+          version: PLAMO_LICENSE_VERSION,
+          acceptedAt,
+          ageNoticeShown: true,
+          ...extra,
+        },
+      },
+      'ja',
+    );
+  }
+
+  it('asks nothing of a user who already agreed under the current notice', () => {
+    const settings = consentWith({ notice: PLAMO_NOTICE_VERSION });
+    expect(settings.consent?.notice).toBe(PLAMO_NOTICE_VERSION);
+    expect(needsLicenseReconsent(settings)).toBe(false);
+  });
+
+  /**
+   * The earlier build's four-bullet commercial summary was accurate but hard to read, and
+   * users who agreed to it never saw the clearer three-part version. Their consent still
+   * names the same bundled license text, so it stays valid, and the notice version is what
+   * tells the UI to show the new explanation once without discarding the stored model.
+   */
+  it('asks a user who agreed under an earlier notice to see the new one', () => {
+    const settings = consentWith({});
+    expect(settings.consent).not.toBeNull();
+    expect(settings.consent?.notice).toBe(LEGACY_NOTICE_VERSION);
+    expect(needsLicenseReconsent(settings)).toBe(true);
+  });
+
+  it('does not ask before any consent exists', () => {
+    expect(needsLicenseReconsent(null)).toBe(false);
+    expect(needsLicenseReconsent(undefined)).toBe(false);
+    expect(needsLicenseReconsent(consentWith({ license: 'other' }))).toBe(false);
+  });
+
+  it('keeps the recorded timestamp and never claims a guardian agreed', () => {
+    const settings = consentWith({ notice: PLAMO_NOTICE_VERSION });
+    expect(settings.consent?.acceptedAt).toBe(acceptedAt);
+    expect(settings.consent?.ageNoticeShown).toBe(true);
+    expect(settings.consent).not.toHaveProperty('guardian');
+  });
+});

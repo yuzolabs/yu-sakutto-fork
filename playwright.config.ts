@@ -1,0 +1,16 @@
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : 1,
+  reporter: 'list',
+  timeout: 90_000,
+  expect: { timeout: 15_000 },
+  webServer: {
+    command: 'node e2e/serve.mjs',
+    url: 'http://127.0.0.1:4173/article.html',
+    reuseExistingServer: true,
+    timeout: 15_000,
+  },
+});

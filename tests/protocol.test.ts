@@ -1,0 +1,431 @@
+import { describe, expect, it } from 'vitest';
+import { EngineError } from '@/engine/errors';
+import {
+  MAX_PRIORITY,
+  MAX_SEGMENT_TEXT,
+  deserializeTranslateOptions,
+  errorFromPayload,
+  errorPayload,
+  isEngineHostMessage,
+  isEngineHostRequest,
+  isTranslationCancelRequest,
+  isTranslationServerMessage,
+  isTranslationStartRequest,
+  serializeTranslateOptions,
+} from '@/engine/offscreen/protocol';
+import type { TranslateOptions } from '@/engine/types';
+import { MAX_GLOSSARY_ENTRIES, MAX_GLOSSARY_MESSAGE_ENTRIES } from '@/shared/glossary';
+
+const OPTIONS: TranslateOptions = {
+  tgt: 'ja',
+  form: 'polite',
+  priority: 10,
+  src: 'en',
+  context: 'Greeting page',
+  glossary: [{ source: 'Runner', target: 'ランナー機能' }],
+  signal: new AbortController().signal,
+};
+
+const SEGMENTS = [{ id: 'a', text: 'Hello.' }];
+
+describe('engine host protocol', () => {
+  it('serializes translate options without the signal', () => {
+    const serialized = serializeTranslateOptions(OPTIONS);
+
+    expect(serialized).toEqual({
+      tgt: 'ja',
+      form: 'polite',
+      priority: 10,
+      src: 'en',
+      context: 'Greeting page',
+      glossary: [{ source: 'Runner', target: 'ランナー機能' }],
+    });
+
+    const signal = new AbortController().signal;
+    expect(deserializeTranslateOptions(serialized, signal)).toEqual({
+      tgt: 'ja',
+      form: 'polite',
+      priority: 10,
+      src: 'en',
+      context: 'Greeting page',
+      glossary: [{ source: 'Runner', target: 'ランナー機能' }],
+      signal,
+    });
+  });
+
+  it('round-trips live caption preemption', () => {
+    const serialized = serializeTranslateOptions({
+      ...OPTIONS,
+      eager: true,
+      preempt: true,
+    });
+    expect(serialized.eager).toBe(true);
+    expect(serialized.preempt).toBe(true);
+    const signal = new AbortController().signal;
+    expect(deserializeTranslateOptions(serialized, signal)).toMatchObject({
+      eager: true,
+      preempt: true,
+      signal,
+    });
+  });
+
+  it('validates translate, status and model requests', () => {
+    expect(
+      isEngineHostRequest({
+        type: 'translate',
+        requestId: 'r1',
+        segments: SEGMENTS,
+        options: serializeTranslateOptions(OPTIONS),
+      }),
+    ).toBe(true);
+    expect(isEngineHostRequest({ type: 'status', requestId: 'r2' })).toBe(true);
+    expect(isEngineHostRequest({ type: 'ping', requestId: 'r3' })).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'model-download',
+        requestId: 'r4',
+        modelId: 'plamo-3-translate-0.8b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'model-use',
+        requestId: 'r5',
+        modelId: 'plamo-3-translate-2b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'model-download',
+        requestId: 'r4',
+        modelId: 'plamo-3-translate-0.8b-q4_k_m',
+        attachOnly: true,
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'model-download',
+        requestId: 'r4',
+        modelId: 'plamo-3-translate-0.8b-q4_k_m',
+        attachOnly: 'yes',
+      }),
+    ).toBe(false);
+    expect(
+      isEngineHostRequest({
+        type: 'model-cancel',
+        requestId: 'cancel',
+        modelId: 'plamo-3-translate-0.8b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({ type: 'model-cancel', requestId: 'cancel', modelId: 'unknown' }),
+    ).toBe(false);
+    expect(isEngineHostRequest({ type: 'folder-reload', requestId: 'f1' })).toBe(true);
+    expect(isEngineHostRequest({ type: 'folder-adopt', requestId: 'f1' })).toBe(true);
+    expect(isEngineHostRequest({ type: 'folder-to-browser', requestId: 'f1' })).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'folder-delete-opfs',
+        requestId: 'f2',
+        modelId: 'plamo-3-translate-0.8b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(isEngineHostRequest({ type: 'folder-delete-opfs', requestId: 'f2' })).toBe(false);
+
+    expect(isEngineHostRequest({ type: 'status' })).toBe(false);
+    expect(
+      isEngineHostRequest({ type: 'translate', requestId: 'r', segments: [], options: {} }),
+    ).toBe(false);
+    expect(isEngineHostRequest({ type: 'model-delete', requestId: 'r', modelId: 'unknown' })).toBe(
+      false,
+    );
+  });
+
+  it('bounds priorities, segment counts and message sizes', () => {
+    const options = serializeTranslateOptions(OPTIONS);
+    const request = (overrides: Record<string, unknown>) => ({
+      type: 'translate',
+      requestId: 'r1',
+      segments: SEGMENTS,
+      options: { ...options, ...overrides },
+    });
+
+    expect(isEngineHostRequest(request({ priority: Number.NaN }))).toBe(false);
+    expect(isEngineHostRequest(request({ priority: Number.POSITIVE_INFINITY }))).toBe(false);
+    expect(isEngineHostRequest(request({ priority: MAX_PRIORITY }))).toBe(true);
+    expect(isEngineHostRequest(request({ priority: -MAX_PRIORITY }))).toBe(true);
+    expect(isEngineHostRequest(request({ priority: MAX_PRIORITY + 1 }))).toBe(false);
+    expect(isEngineHostRequest(request({ priority: -MAX_PRIORITY - 1 }))).toBe(false);
+    expect(isEngineHostRequest(request({ tgt: 'english' }))).toBe(false);
+    expect(isEngineHostRequest(request({ tgt: 'pt' }))).toBe(true);
+    expect(isEngineHostRequest(request({ eager: true }))).toBe(true);
+    expect(isEngineHostRequest(request({ eager: 'yes' }))).toBe(false);
+    expect(isEngineHostRequest(request({ preempt: true }))).toBe(true);
+    expect(isEngineHostRequest(request({ preempt: 'yes' }))).toBe(false);
+    // Draft and preview options are gone: the host never paints built-in page text.
+    expect(isEngineHostRequest(request({ draft: true }))).toBe(true);
+    expect(isEngineHostRequest({ type: 'benchmark', requestId: 'b1' })).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'model-set',
+        requestId: 'm1',
+        modelId: 'plamo-3-translate-2b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(isEngineHostRequest({ type: 'model-set', requestId: 'm1', modelId: 'nope' })).toBe(
+      false,
+    );
+    expect(
+      isEngineHostRequest({
+        type: 'runtime-set',
+        requestId: 'rt1',
+        idleMinutes: 0,
+        tier: 'c4',
+        targetLanguage: 'ja',
+        form: 'plain',
+        glossary: [],
+        consented: true,
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'runtime-set',
+        requestId: 'rt1',
+        idleMinutes: 3,
+        tier: 'auto',
+        targetLanguage: 'ja',
+        form: 'polite',
+        glossary: [],
+        consented: false,
+      }),
+    ).toBe(false);
+    expect(isEngineHostRequest({ type: 'cache-clear', requestId: 'c1' })).toBe(true);
+    expect(isEngineHostRequest({ type: 'tier-set', requestId: 't1', tier: 'auto' })).toBe(true);
+    expect(isEngineHostRequest({ type: 'tier-set', requestId: 't1', tier: 'fast' })).toBe(false);
+    expect(
+      isEngineHostRequest({
+        type: 'source-set',
+        requestId: 's1',
+        engineSource: 'local-server',
+        localServer: {
+          url: 'http://127.0.0.1:8080/v1',
+          model: 'x',
+          apiKey: '',
+          timeoutMs: 120_000,
+          allowRemote: false,
+          parallel: 4,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'source-set',
+        requestId: 's1',
+        engineSource: 'remote',
+        localServer: {
+          url: 'http://127.0.0.1:8080/v1',
+          model: 'x',
+          apiKey: '',
+          timeoutMs: 120_000,
+          allowRemote: false,
+          parallel: 4,
+        },
+      }),
+    ).toBe(false);
+    expect(isEngineHostRequest(request({ src: 'e'.repeat(36) }))).toBe(false);
+    expect(isEngineHostRequest(request({ context: 'x'.repeat(20_001) }))).toBe(false);
+    expect(
+      isEngineHostRequest(
+        request({
+          glossary: Array.from({ length: MAX_GLOSSARY_ENTRIES }, (_, index) => ({
+            source: `term-${String(index)}`,
+            target: `訳-${String(index)}`,
+          })),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest(
+        request({
+          glossary: Array.from({ length: MAX_GLOSSARY_MESSAGE_ENTRIES }, (_, index) => ({
+            source: `term-${String(index)}`,
+            target: `訳-${String(index)}`,
+          })),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest(
+        request({
+          glossary: Array.from({ length: MAX_GLOSSARY_MESSAGE_ENTRIES + 1 }, () => ({
+            source: 'a',
+            target: 'b',
+          })),
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isEngineHostRequest({
+        type: 'translate',
+        requestId: 'r1',
+        segments: Array.from({ length: 2001 }, (_, index) => ({ id: String(index), text: 'x' })),
+        options,
+      }),
+    ).toBe(false);
+    expect(
+      isEngineHostRequest({
+        type: 'translate',
+        requestId: 'r1',
+        segments: [{ id: 'a', text: 'x'.repeat(20_000) }],
+        options,
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'translate',
+        requestId: 'r1',
+        segments: [{ id: 'a', text: 'x'.repeat(MAX_SEGMENT_TEXT) }],
+        options,
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostRequest({
+        type: 'translate',
+        requestId: 'r1',
+        segments: [{ id: 'a', text: 'x'.repeat(MAX_SEGMENT_TEXT + 1) }],
+        options,
+      }),
+    ).toBe(false);
+  });
+
+  it('validates host events and rejects malformed ones', () => {
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', textDelta: 'こん', engine: 'plamo' },
+      }),
+    ).toBe(true);
+    expect(isEngineHostMessage({ type: 'done', requestId: 'r1' })).toBe(true);
+    expect(
+      isEngineHostMessage({
+        type: 'model-persist',
+        modelId: 'plamo-3-translate-2b-q4_k_m',
+      }),
+    ).toBe(true);
+    expect(isEngineHostMessage({ type: 'model-persist', modelId: 'missing' })).toBe(false);
+    expect(
+      isEngineHostMessage({
+        type: 'model-progress',
+        requestId: 'r1',
+        status: {
+          id: 'plamo-3-translate-0.8b-q4_k_m',
+          state: 'downloading',
+          received: 1,
+          total: 2,
+          progress: 0.5,
+        },
+      }),
+    ).toBe(true);
+    expect(isEngineHostMessage({ type: 'response', requestId: 'r1', ok: true, value: null })).toBe(
+      true,
+    );
+    expect(
+      isEngineHostMessage({
+        type: 'response',
+        requestId: 'r1',
+        ok: false,
+        error: { code: 'aborted', message: 'x' },
+      }),
+    ).toBe(true);
+
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', textDelta: '訳', engine: 'plamo', restart: true },
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', final: '訳', engine: 'plamo', restart: true },
+      }),
+    ).toBe(false);
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', textDelta: '訳', engine: 'plamo', restart: 'yes' },
+      }),
+    ).toBe(false);
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', final: 'Hello.', engine: 'plamo', error: true },
+      }),
+    ).toBe(true);
+    expect(
+      isEngineHostMessage({
+        type: 'chunk',
+        requestId: 'r1',
+        chunk: { id: 'a', textDelta: 'Hello.', engine: 'plamo', error: true },
+      }),
+    ).toBe(false);
+    expect(isEngineHostMessage({ type: 'chunk', requestId: 'r1', chunk: { id: 'a' } })).toBe(false);
+    expect(isEngineHostMessage({ type: 'done' })).toBe(false);
+    expect(isEngineHostMessage({ type: 'response', requestId: 'r1', ok: true })).toBe(false);
+    expect(
+      isEngineHostMessage({
+        type: 'response',
+        requestId: 'r1',
+        ok: false,
+        error: { code: 'nope', message: 'x' },
+      }),
+    ).toBe(false);
+  });
+
+  it('validates the caller port messages', () => {
+    expect(
+      isTranslationStartRequest({
+        type: 'start',
+        requestId: 'r1',
+        segments: SEGMENTS,
+        options: serializeTranslateOptions(OPTIONS),
+      }),
+    ).toBe(true);
+    expect(isTranslationCancelRequest({ type: 'cancel', requestId: 'r1' })).toBe(true);
+    expect(isTranslationStartRequest({ type: 'start', requestId: 'r1' })).toBe(false);
+    expect(isTranslationServerMessage({ type: 'done', requestId: 'r1' })).toBe(true);
+    expect(
+      isTranslationServerMessage({
+        type: 'error',
+        requestId: 'r1',
+        error: { code: 'model-missing', message: 'x' },
+      }),
+    ).toBe(true);
+    expect(isTranslationServerMessage({ type: 'chunk', requestId: 'r1' })).toBe(false);
+  });
+
+  it('round-trips engine errors', () => {
+    const error = new EngineError('model-integrity', 'digest mismatch');
+    expect(errorPayload(error)).toEqual({ code: 'model-integrity', message: 'digest mismatch' });
+    expect(errorFromPayload(errorPayload(error))).toMatchObject({
+      code: 'model-integrity',
+      message: 'digest mismatch',
+    });
+    expect(errorPayload('plain')).toEqual({ code: 'unknown', message: 'plain' });
+    const changed = new EngineError('model-changed', 'The selected model changed.');
+    expect(errorPayload(changed)).toEqual({
+      code: 'model-changed',
+      message: 'The selected model changed.',
+    });
+    const folder = new EngineError('model-folder-permission', 'needs permission');
+    expect(errorPayload(folder)).toEqual({
+      code: 'model-folder-permission',
+      message: 'needs permission',
+    });
+  });
+});

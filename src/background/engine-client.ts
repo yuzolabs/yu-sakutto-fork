@@ -1,0 +1,721 @@
+import { browser, type Browser } from 'wxt/browser';
+import { bindPortDisconnectCleanup, readRuntimeLastError } from '@/shared/runtime-last-error';
+import { abortError, EngineError, isAbortError } from '@/engine/errors';
+import type { ModelId } from '@/engine/model/catalog';
+import {
+  ENGINE_HOST_PORT,
+  MODEL_STATUS_PROGRESS_ID,
+  errorFromPayload,
+  isEngineHostMessage,
+  serializeTranslateOptions,
+  type EngineHostRequest,
+  type BenchmarkRequest,
+  type CacheClearRequest,
+  type FolderAdoptRequest,
+  type FolderDeleteOpfsRequest,
+  type FolderReloadRequest,
+  type FolderToBrowserRequest,
+  type ModelDeleteRequest,
+  type ModelDownloadRequest,
+  type ModelStatusRequest,
+  type ModelUseRequest,
+  type ModelWarmRequest,
+  type PingRequest,
+  type RuntimeSetRequest,
+  type SourceSetRequest,
+  type StatusRequest,
+  type TierSetRequest,
+  type TranslateRequest,
+} from '@/engine/offscreen/protocol';
+import { ChunkStream } from '@/engine/queue/chunk-stream';
+import type { TranslateOptions, TranslateSegment, TranslationChunk } from '@/engine/types';
+import { advanceModelStatus } from '@/shared/model-progress';
+import { isSharedFolderStatus, type SharedFolderStatus } from '@/engine/model/folder-status';
+import {
+  isEngineStatus,
+  isModelStatus,
+  type EngineStatus,
+  type ModelStatus,
+} from '@/shared/engine-status';
+import { hasLicenseConsent } from '@/shared/agreement';
+import type { Settings, TierPreference } from '@/shared/settings';
+import { loadSettings, saveSettings } from '@/shared/storage';
+import { isModelFolderToBrowserResult, type ModelFolderToBrowserResult } from '@/shared/messages';
+import type { OffscreenController } from './offscreen-lifecycle';
+
+type RequestWithoutId =
+  | Omit<StatusRequest, 'requestId'>
+  | Omit<PingRequest, 'requestId'>
+  | Omit<ModelDownloadRequest, 'requestId'>
+  | Omit<ModelDeleteRequest, 'requestId'>
+  | Omit<ModelUseRequest, 'requestId'>
+  | Omit<ModelWarmRequest, 'requestId'>
+  | Omit<ModelStatusRequest, 'requestId'>
+  | Omit<CacheClearRequest, 'requestId'>
+  | Omit<TierSetRequest, 'requestId'>
+  | Omit<SourceSetRequest, 'requestId'>
+  | Omit<BenchmarkRequest, 'requestId'>
+  | Omit<FolderReloadRequest, 'requestId'>
+  | Omit<FolderDeleteOpfsRequest, 'requestId'>
+  | Omit<FolderAdoptRequest, 'requestId'>
+  | Omit<FolderToBrowserRequest, 'requestId'>;
+
+const FOLDER_TRANSFER_TIMEOUT_MS = 15 * 60 * 1000;
+const DOWNLOAD_ATTACH_ATTEMPTS = 3;
+const DOWNLOAD_ATTACH_DELAY_MS = 500;
+
+interface PendingRequest {
+  resolve(value: unknown): void;
+  reject(error: unknown): void;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+interface RequestOptions {
+  timeoutMs?: number;
+  retry?: boolean;
+  /** Recreate the offscreen document when a host-gone response leaves attempts unused. */
+  recover?: boolean;
+}
+
+function createRequestId(): string {
+  return crypto.randomUUID();
+}
+
+function isMilliseconds(value: unknown): value is { milliseconds: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'milliseconds' in value &&
+    typeof value.milliseconds === 'number' &&
+    Number.isFinite(value.milliseconds)
+  );
+}
+
+function hostError(message: string, cause?: unknown): EngineError {
+  return new EngineError(
+    'offscreen-unavailable',
+    message,
+    cause === undefined ? undefined : { cause },
+  );
+}
+
+export class EngineClient {
+  private port: Browser.runtime.Port | null = null;
+  private connecting: Promise<Browser.runtime.Port> | null = null;
+  private readonly pending = new Map<string, PendingRequest>();
+  private readonly streams = new Map<string, ChunkStream<TranslationChunk>>();
+  private readonly progress = new Map<string, (status: ModelStatus) => void>();
+  private readonly modelMarks = new Map<string, ModelStatus>();
+  private readonly modelStatusListeners = new Set<(status: ModelStatus) => void>();
+  private sourceKey = '';
+  private runtimeKey = '';
+  private pushedModelId: ModelId | null = null;
+  private inbox: Promise<void> = Promise.resolve();
+
+  constructor(private readonly controller: OffscreenController) {}
+
+  async status(): Promise<EngineStatus> {
+    await this.ensureSource();
+    const value = await this.request({ type: 'status' }, { timeoutMs: 15_000 });
+    if (!isEngineStatus(value)) throw hostError('The engine host returned an invalid status.');
+    return value;
+  }
+
+  async ensureHost(): Promise<void> {
+    await this.controller.ensure();
+  }
+
+  async ping(): Promise<void> {
+    await this.ensureSource();
+    await this.request({ type: 'ping' }, { timeoutMs: 2_000, retry: false, recover: false });
+  }
+
+  async deleteModel(modelId: ModelId): Promise<ModelStatus> {
+    const value = await this.request({ type: 'model-delete', modelId }, { timeoutMs: 30_000 });
+    if (!isModelStatus(value)) throw hostError('The engine host returned an invalid status.');
+    return value;
+  }
+
+  async useModel(modelId: ModelId): Promise<ModelStatus> {
+    const value = await this.request({ type: 'model-use', modelId }, { timeoutMs: 30_000 });
+    if (!isModelStatus(value)) throw hostError('The engine host returned an invalid status.');
+    return value;
+  }
+
+  async warmModel(): Promise<ModelStatus> {
+    await this.ensureSource();
+    const value = await this.request({ type: 'model-warm' }, { timeoutMs: 120_000, retry: false });
+    if (!isModelStatus(value)) throw hostError('The engine host returned an invalid status.');
+    return value;
+  }
+
+  async modelStatus(modelId: ModelId): Promise<ModelStatus> {
+    await this.ensureSource();
+    const value = await this.request({ type: 'model-status', modelId }, { timeoutMs: 15_000 });
+    if (!isModelStatus(value)) throw hostError('The engine host returned an invalid status.');
+    return value;
+  }
+
+  /** Cancel by model ID so a new service worker can stop an older worker's attachment. */
+  async cancelModel(modelId: ModelId): Promise<void> {
+    const port = await this.connect();
+    port.postMessage({ type: 'model-cancel', requestId: createRequestId(), modelId });
+    readRuntimeLastError();
+  }
+
+  async reloadModelFolder(): Promise<SharedFolderStatus> {
+    await this.ensureSource();
+    const value = await this.request({ type: 'folder-reload' }, { timeoutMs: 180_000 });
+    if (!isSharedFolderStatus(value)) {
+      throw hostError('The engine host returned an invalid folder status.');
+    }
+    return value;
+  }
+
+  async deleteOpfsCopy(modelId: ModelId): Promise<SharedFolderStatus> {
+    await this.ensureSource();
+    const value = await this.request(
+      { type: 'folder-delete-opfs', modelId },
+      { timeoutMs: 30_000 },
+    );
+    if (!isSharedFolderStatus(value)) {
+      throw hostError('The engine host returned an invalid folder status.');
+    }
+    return value;
+  }
+
+  async adoptModelFolder(): Promise<SharedFolderStatus> {
+    await this.ensureSource();
+    const value = await this.request(
+      { type: 'folder-adopt' },
+      { timeoutMs: FOLDER_TRANSFER_TIMEOUT_MS },
+    );
+    if (!isSharedFolderStatus(value)) {
+      throw hostError('The engine host returned an invalid folder status.');
+    }
+    return value;
+  }
+
+  async moveModelFolderToBrowser(): Promise<ModelFolderToBrowserResult> {
+    await this.ensureSource();
+    const value = await this.request(
+      { type: 'folder-to-browser' },
+      { timeoutMs: FOLDER_TRANSFER_TIMEOUT_MS },
+    );
+    if (!isModelFolderToBrowserResult(value)) {
+      throw hostError('The engine host returned an invalid folder result.');
+    }
+    return value;
+  }
+
+  async clearCache(): Promise<void> {
+    await this.request({ type: 'cache-clear' }, { timeoutMs: 15_000 });
+  }
+
+  async setTier(tier: TierPreference): Promise<void> {
+    await this.ensureSource();
+    await this.request({ type: 'tier-set', tier }, { timeoutMs: 30_000 });
+  }
+
+  async setSource(settings: Settings): Promise<void> {
+    const port = await this.connect();
+    await this.pushSource(port, settings);
+  }
+
+  /**
+   * Chrome's offscreen document cannot read chrome.storage. Push the current source
+   * before any status, warm, or translate so local-server actually takes effect.
+   */
+  private async ensureSource(): Promise<void> {
+    const settings = await loadSettings().catch(() => null);
+    if (!settings) return;
+    await this.setSource(settings);
+  }
+
+  /**
+   * Apply a settings change to a host that is already open. Deferred so a save
+   * triggered by `model-persist` cannot wait on the same port inbox that is
+   * still processing that event.
+   */
+  syncStoredSettings(settings: Settings): void {
+    setTimeout(() => {
+      const port = this.port;
+      if (!port) return;
+      void this.pushLive(port, settings).catch(() => undefined);
+    }, 0);
+  }
+
+  /** Host load transitions, so the service worker can broadcast them to every surface. */
+  onModelStatus(listener: (status: ModelStatus) => void): () => void {
+    this.modelStatusListeners.add(listener);
+    return () => this.modelStatusListeners.delete(listener);
+  }
+
+  /**
+   * Close a leftover offscreen document from a previous build, then push the stored
+   * engineSource. An upgraded profile can keep an old host that does not understand
+   * source-set, so `engine:status` would stay in-browser.
+   */
+  async bootSource(): Promise<void> {
+    this.dropPort();
+    try {
+      await this.controller.close();
+    } catch {
+      // No document yet.
+    }
+    const settings = await loadSettings().catch(() => null);
+    if (!settings) return;
+    await this.setSource(settings);
+  }
+
+  async benchmark(): Promise<number | null> {
+    const value: unknown = await this.request(
+      { type: 'benchmark' },
+      { timeoutMs: 60_000, retry: false },
+    );
+    if (value === null) return null;
+    if (!isMilliseconds(value)) throw hostError('The engine host returned an invalid benchmark.');
+    return value.milliseconds;
+  }
+
+  async downloadModel(
+    modelId: ModelId,
+    options: {
+      signal: AbortSignal;
+      onProgress?: (status: ModelStatus) => void;
+      attachOnly?: boolean;
+    },
+  ): Promise<ModelStatus> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= DOWNLOAD_ATTACH_ATTEMPTS; attempt += 1) {
+      const requestId = createRequestId();
+      if (options.onProgress) this.progress.set(requestId, options.onProgress);
+
+      const cancel = (): void => {
+        this.sendRaw({ type: 'model-cancel', requestId });
+      };
+      options.signal.addEventListener('abort', cancel, { once: true });
+
+      try {
+        const port = await raceWithAbort(this.connect(), options.signal);
+        if (options.signal.aborted) throw abortError();
+        const value = await this.roundTrip(
+          port,
+          {
+            type: 'model-download',
+            requestId,
+            modelId,
+            ...(options.attachOnly ? { attachOnly: true } : {}),
+          },
+          0,
+          options.signal,
+        );
+        if (!isModelStatus(value)) throw hostError('The engine host returned an invalid status.');
+        return value;
+      } catch (error) {
+        if (options.signal.aborted || isAbortError(error)) throw abortError();
+        lastError = error;
+
+        if (!isHostGone(error) || attempt === DOWNLOAD_ATTACH_ATTEMPTS) {
+          throw error instanceof EngineError
+            ? error
+            : hostError('The model download failed.', error);
+        }
+
+        // The download keeps running in the offscreen document; reconnect and attach again.
+        this.dropPort();
+        await raceWithAbort(
+          new Promise((resolve) => setTimeout(resolve, DOWNLOAD_ATTACH_DELAY_MS)),
+          options.signal,
+        );
+      } finally {
+        options.signal.removeEventListener('abort', cancel);
+        this.progress.delete(requestId);
+      }
+    }
+
+    throw lastError instanceof EngineError
+      ? lastError
+      : hostError('The model download failed.', lastError);
+  }
+
+  async *translate(
+    segments: readonly TranslateSegment[],
+    options: TranslateOptions,
+  ): AsyncGenerator<TranslationChunk> {
+    const requestId = createRequestId();
+    const stream = new ChunkStream<TranslationChunk>();
+    this.streams.set(requestId, stream);
+
+    let cancelled = false;
+    const cancel = (): void => {
+      cancelled = true;
+      this.sendRaw({ type: 'cancel', requestId });
+      stream.end();
+    };
+    options.signal.addEventListener('abort', cancel, { once: true });
+
+    try {
+      const port = await this.connect();
+      if (cancelled || options.signal.aborted) return;
+      await this.ensureSource();
+      if (cancelled || options.signal.aborted) return;
+
+      port.postMessage({
+        type: 'translate',
+        requestId,
+        segments: segments.map((segment) => ({ ...segment })),
+        options: serializeTranslateOptions(options),
+      } satisfies TranslateRequest);
+      readRuntimeLastError();
+
+      for await (const chunk of stream) yield chunk;
+    } catch (error) {
+      if (cancelled || options.signal.aborted) return;
+      throw error instanceof EngineError ? error : hostError('The translation host failed.', error);
+    } finally {
+      options.signal.removeEventListener('abort', cancel);
+      this.streams.delete(requestId);
+      this.sendRaw({ type: 'cancel', requestId });
+    }
+  }
+
+  private async request<T>(message: RequestWithoutId, options: RequestOptions = {}): Promise<T> {
+    const attempts = options.retry === false ? 1 : 2;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const requestId = createRequestId();
+
+      try {
+        const port = await this.connect();
+        return (await this.roundTrip(
+          port,
+          { ...message, requestId } as EngineHostRequest,
+          options.timeoutMs ?? 10_000,
+        )) as T;
+      } catch (error) {
+        lastError = error;
+        if (!isHostGone(error)) throw error;
+
+        this.dropPort();
+        if (attempt + 1 >= attempts) throw error;
+        if (options.recover !== false) await this.controller.recreate();
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : hostError('The translation host failed.');
+  }
+
+  private connect(): Promise<Browser.runtime.Port> {
+    if (this.port) return Promise.resolve(this.port);
+
+    this.connecting ??= (async () => {
+      await this.controller.ensure();
+      const port = this.openPort();
+      this.port = port;
+      try {
+        await this.pushStoredSource(port);
+        return port;
+      } catch (error) {
+        this.dropPort();
+        if (!isHostGone(error)) throw error;
+        await this.controller.recreate();
+        const retry = this.openPort();
+        this.port = retry;
+        await this.pushStoredSource(retry);
+        return retry;
+      }
+    })().finally(() => {
+      this.connecting = null;
+    });
+
+    return this.connecting;
+  }
+
+  private openPort(): Browser.runtime.Port {
+    let port: Browser.runtime.Port;
+    try {
+      port = browser.runtime.connect({ name: ENGINE_HOST_PORT });
+    } catch (error) {
+      throw hostError('The translation host could not be opened.', error);
+    }
+    port.onMessage.addListener((message: unknown) => {
+      this.inbox = this.inbox.then(() => this.handleMessage(message)).catch(() => undefined);
+    });
+    bindPortDisconnectCleanup(port, () => {
+      if (this.port === port) this.handleDisconnect();
+    });
+    return port;
+  }
+
+  /**
+   * Chrome's offscreen document cannot read chrome.storage. Push the source, the
+   * idle/prewarm snapshot, and the saved model before any other host message.
+   * Runtime settings go out before the model so the first service open sees them.
+   */
+  private async pushStoredSource(port: Browser.runtime.Port): Promise<void> {
+    const settings = await loadSettings().catch(() => null);
+    if (!settings) return;
+    await this.pushSource(port, settings);
+    await this.pushRuntime(port, settings);
+    await this.pushModel(port, settings);
+  }
+
+  private async pushLive(port: Browser.runtime.Port, settings: Settings): Promise<void> {
+    if (this.port !== port) return;
+    await this.pushSource(port, settings);
+    await this.pushRuntime(port, settings);
+  }
+
+  private async pushSource(port: Browser.runtime.Port, settings: Settings): Promise<void> {
+    const payload = sourceSetPayload(settings);
+    const key = sourceKeyOf(payload);
+    if (key === this.sourceKey && this.port === port) return;
+    await this.roundTrip(port, { ...payload, requestId: createRequestId() }, 2_000);
+    this.sourceKey = key;
+  }
+
+  private async pushRuntime(port: Browser.runtime.Port, settings: Settings): Promise<void> {
+    const payload = runtimeSetPayload(settings);
+    const key = runtimeKeyOf(settings);
+    if (key === this.runtimeKey && this.port === port) return;
+    await this.roundTrip(port, { ...payload, requestId: createRequestId() }, 2_000);
+    this.runtimeKey = key;
+  }
+
+  private async pushModel(port: Browser.runtime.Port, settings: Settings): Promise<void> {
+    if (settings.selectedModelId === this.pushedModelId && this.port === port) return;
+    // Re-applying on a document that is already open reads both model files.
+    await this.roundTrip(
+      port,
+      { type: 'model-set', requestId: createRequestId(), modelId: settings.selectedModelId },
+      15_000,
+    );
+    this.pushedModelId = settings.selectedModelId;
+  }
+
+  private roundTrip(
+    port: Browser.runtime.Port,
+    message: EngineHostRequest,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(abortError());
+        return;
+      }
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = (): void => {
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      };
+      const onAbort = (): void => {
+        this.pending.delete(message.requestId);
+        cleanup();
+        reject(abortError());
+      };
+      const settle = (callback: () => void): void => {
+        cleanup();
+        callback();
+      };
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          this.pending.delete(message.requestId);
+          settle(() => reject(hostError('The translation host did not respond in time.')));
+        }, timeoutMs);
+      }
+
+      this.pending.set(message.requestId, {
+        resolve: (value) => settle(() => resolve(value)),
+        reject: (error) => settle(() => reject(error)),
+        timer,
+      });
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      try {
+        port.postMessage(message);
+        readRuntimeLastError();
+      } catch (error) {
+        this.pending.delete(message.requestId);
+        settle(() => reject(hostError('The translation host is not reachable.', error)));
+      }
+    });
+  }
+
+  private async handleMessage(message: unknown): Promise<void> {
+    if (!isEngineHostMessage(message)) return;
+
+    if (message.type === 'model-persist') {
+      await saveSettings({ selectedModelId: message.modelId }).catch(() => undefined);
+      return;
+    }
+
+    switch (message.type) {
+      case 'chunk': {
+        this.streams.get(message.requestId)?.push(message.chunk);
+        return;
+      }
+      case 'done': {
+        const stream = this.streams.get(message.requestId);
+        if (stream) {
+          this.streams.delete(message.requestId);
+          stream.end();
+        }
+        return;
+      }
+      case 'error': {
+        const stream = this.streams.get(message.requestId);
+        if (stream) {
+          this.streams.delete(message.requestId);
+          stream.fail(errorFromPayload(message.error));
+        }
+        return;
+      }
+      case 'model-progress': {
+        const next = advanceModelStatus(
+          this.modelMarks.get(message.status.id) ?? null,
+          message.status,
+        );
+        this.modelMarks.set(next.id, next);
+        this.progress.get(message.requestId)?.(next);
+        if (message.requestId === MODEL_STATUS_PROGRESS_ID) {
+          for (const listener of this.modelStatusListeners) {
+            try {
+              listener(next);
+            } catch {
+              // A status subscriber must not break the host inbox.
+            }
+          }
+        }
+        return;
+      }
+      case 'response': {
+        const pending = this.pending.get(message.requestId);
+        if (!pending) return;
+        this.pending.delete(message.requestId);
+        if (pending.timer) clearTimeout(pending.timer);
+        if (message.ok) pending.resolve(message.value);
+        else pending.reject(errorFromPayload(message.error));
+        return;
+      }
+    }
+  }
+
+  private handleDisconnect(): void {
+    this.port = null;
+    this.clearPushedSettings();
+    this.failAll(hostError('The translation host was closed.'));
+  }
+
+  private dropPort(): void {
+    const port = this.port;
+    this.port = null;
+    this.clearPushedSettings();
+    try {
+      port?.disconnect();
+    } catch {
+      // Already disconnected.
+    }
+  }
+
+  private clearPushedSettings(): void {
+    this.sourceKey = '';
+    this.runtimeKey = '';
+    this.pushedModelId = null;
+  }
+
+  private failAll(error: EngineError): void {
+    for (const pending of this.pending.values()) {
+      if (pending.timer) clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+
+    for (const stream of this.streams.values()) stream.fail(error);
+    this.streams.clear();
+    this.progress.clear();
+  }
+
+  private sendRaw(message: EngineHostRequest): void {
+    try {
+      this.port?.postMessage(message);
+    } catch {
+      // The port is gone; the disconnect handler settles the streams.
+    }
+    readRuntimeLastError();
+  }
+}
+
+async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortError();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(abortError());
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+function isHostGone(error: unknown): boolean {
+  return error instanceof EngineError && error.code === 'offscreen-unavailable';
+}
+
+function runtimeSetPayload(settings: Settings): Omit<RuntimeSetRequest, 'requestId'> {
+  return {
+    type: 'runtime-set',
+    idleMinutes: settings.idleMinutes,
+    tier: settings.tier,
+    targetLanguage: settings.targetLanguage,
+    form: settings.form,
+    glossary: settings.glossary.map((entry) => ({ source: entry.source, target: entry.target })),
+    consented: hasLicenseConsent(settings),
+  };
+}
+
+function runtimeKeyOf(settings: Settings): string {
+  return [
+    String(settings.idleMinutes),
+    settings.tier,
+    settings.targetLanguage,
+    settings.form,
+    hasLicenseConsent(settings) ? '1' : '0',
+    settings.glossary.map((entry) => `${entry.source}\u0000${entry.target}`).join('\u0001'),
+  ].join('\u0002');
+}
+
+function sourceSetPayload(settings: Settings): Omit<SourceSetRequest, 'requestId'> {
+  return {
+    type: 'source-set',
+    engineSource: settings.engineSource,
+    localServer: {
+      url: settings.localServerUrl,
+      model: settings.localServerModel,
+      apiKey: settings.localServerApiKey,
+      timeoutMs: settings.localServerTimeoutMs,
+      allowRemote: settings.localServerAllowRemote,
+      parallel: settings.localServerParallel,
+    },
+  };
+}
+
+function sourceKeyOf(payload: Omit<SourceSetRequest, 'requestId'>): string {
+  const local = payload.localServer;
+  return [
+    payload.engineSource,
+    local.url,
+    local.model,
+    local.apiKey,
+    String(local.timeoutMs),
+    local.allowRemote ? '1' : '0',
+    String(local.parallel),
+  ].join('\0');
+}
