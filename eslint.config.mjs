@@ -8,6 +8,7 @@ export default tseslint.config(
   {
     ignores: [
       '.output/**',
+      'var/**',
       '.wxt/**',
       '.orchestrator/**',
       'node_modules/**',

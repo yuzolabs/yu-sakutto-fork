@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "此頁面已以目標語言撰寫。"
   },
+  "xBodyStop": {
+    "message": "停止 X 貼文翻譯"
+  },
+  "xBodyResume": {
+    "message": "恢復 X 貼文翻譯"
+  },
+  "xBodyProgress": {
+    "message": "正在翻譯 X 貼文 $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "X 貼文翻譯進度"
+  },
+  "xBodyDone": {
+    "message": "螢幕上的 X 貼文已翻譯。"
+  },
+  "xBodyPartial": {
+    "message": "有 $BLOCKS$ 則 X 貼文無法翻譯。",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "在 x.com 上只翻譯貼文內文、社群筆記和文章，不翻譯整個頁面。"
+  },
+  "xBodyPausedHint": {
+    "message": "此分頁中的 X 貼文翻譯已停止。Grok 的翻譯仍會切換回原文。重新載入頁面後會重新開始。"
+  },
   "displaySiteHint": {
     "message": "此選項將記錄在網站中。"
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "未獲准存取 YouTube 和 X。"
+  },
+  "xBodySetting": {
+    "message": "X 貼文翻譯"
+  },
+  "xBodySettingHelp": {
+    "message": "自動翻譯 x.com 上不是目標語言的貼文內文、社群筆記和文章。當 X 顯示 Grok 翻譯且 X 以英文或日文顯示時，Sakutto 會在該分頁中對每個項目按一次 X 的「Show original」，然後翻譯原文。不會變更您的 X 帳號設定。開啟時，Chrome 會要求存取 x.com。"
+  },
+  "xBodyPermissionDenied": {
+    "message": "未獲准存取 x.com，因此 X 貼文翻譯維持關閉。"
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "顯示原文行"

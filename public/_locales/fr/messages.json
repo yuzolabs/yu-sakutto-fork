@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Cette page est déjà rédigée dans la langue cible."
   },
+  "xBodyStop": {
+    "message": "Arrêter la traduction des publications X"
+  },
+  "xBodyResume": {
+    "message": "Reprendre la traduction des publications X"
+  },
+  "xBodyProgress": {
+    "message": "Traduction des publications X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Progression de la traduction des publications X"
+  },
+  "xBodyDone": {
+    "message": "Les publications X à l’écran sont traduites."
+  },
+  "xBodyPartial": {
+    "message": "$BLOCKS$ publications X n’ont pas pu être traduites.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "Sur x.com, seuls le texte des publications, les notes de la communauté et les articles sont traduits, et non la page entière."
+  },
+  "xBodyPausedHint": {
+    "message": "La traduction des publications X est arrêtée dans cet onglet. Les traductions de Grok sont toujours remplacées par l’original. Elle reprend quand vous rechargez la page."
+  },
   "displaySiteHint": {
     "message": "Ce choix est mémorisé pour le site."
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "L’accès à YouTube et X n’a pas été accordé."
+  },
+  "xBodySetting": {
+    "message": "Traduction des publications X"
+  },
+  "xBodySettingHelp": {
+    "message": "Traduit automatiquement le texte des publications, les notes de la communauté et les articles sur x.com qui ne sont pas dans votre langue cible. Lorsque X affiche une traduction de Grok et que X est en anglais ou en japonais, Sakutto appuie une fois par élément sur « Show original » de X dans cet onglet et traduit l’original. Les paramètres de votre compte X ne sont pas modifiés. Chrome demande l’accès à x.com lorsque vous activez cette option."
+  },
+  "xBodyPermissionDenied": {
+    "message": "L’accès à x.com n’a pas été accordé : la traduction des publications X reste désactivée."
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "Afficher la ligne d’origine"

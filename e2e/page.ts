@@ -41,6 +41,7 @@ export async function resetExtensionStorage(
   options: {
     targetLanguage?: string;
     translateVideoCaptions?: boolean;
+    translateXBody?: boolean;
     videoCaptionDisplay?: 'replace' | 'bilingual';
     captionCustomHosts?: string[];
     translationPopupSize?: number;
@@ -52,6 +53,7 @@ export async function resetExtensionStorage(
 ): Promise<void> {
   const targetLanguage = options.targetLanguage ?? 'en';
   const translateVideoCaptions = options.translateVideoCaptions === true;
+  const translateXBody = options.translateXBody === true;
   const videoCaptionDisplay = options.videoCaptionDisplay ?? 'bilingual';
   const captionCustomHosts = options.captionCustomHosts ?? [];
   const translationPopupSize = options.translationPopupSize ?? 100;
@@ -90,6 +92,7 @@ export async function resetExtensionStorage(
     localServerParallel: 8,
     localServerExperimentalAck: false,
     translateVideoCaptions,
+    translateXBody,
     videoCaptionDisplay,
     captionCustomHosts,
     translationPopupSize,
@@ -115,6 +118,7 @@ export async function resetExtensionStorage(
       return value.settings as
         | {
             translateVideoCaptions?: boolean;
+            translateXBody?: boolean;
             targetLanguage?: string;
             gmailTranslateBanner?: boolean;
           }
@@ -122,6 +126,7 @@ export async function resetExtensionStorage(
     });
     if (
       stored?.translateVideoCaptions === translateVideoCaptions &&
+      stored.translateXBody === translateXBody &&
       stored.targetLanguage === targetLanguage &&
       stored.gmailTranslateBanner === gmailTranslateBanner
     ) {

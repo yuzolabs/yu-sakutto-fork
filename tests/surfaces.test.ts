@@ -217,6 +217,51 @@ describe('start controls while the model downloads', () => {
   });
 });
 
+describe('X post translation surfaces', () => {
+  const settingsFields = source('ui/SettingsFields.svelte');
+  const content = source('content/main.ts');
+
+  it('puts the switch on the settings page only, and never in the Firefox build', () => {
+    expect(settingsFields).toContain('data-sakutto="x-body"');
+    expect(settingsFields).toContain("t('xBodySetting')");
+    expect(settingsFields).toContain("t('xBodySettingHelp')");
+    expect(settingsFields).toContain("t('xBodyPermissionDenied')");
+    expect(settingsFields).toContain('const showXBody = xBodySupported();');
+    expect(settingsFields).toMatch(/\{#if showXBody\}[\s\S]*data-sakutto="x-body"/);
+    expect(popup).not.toContain('translateXBody');
+    expect(popup).not.toContain('xBodySetting');
+  });
+
+  it('calls permissions.request as the first await when the switch turns on', () => {
+    const start = settingsFields.indexOf('data-sakutto="x-body"');
+    const body = settingsFields.slice(start, settingsFields.indexOf('</label>', start));
+    const before = body.slice(0, body.indexOf('await resolveXBodyToggle(input.checked)'));
+    expect(before).toContain('xBodyDenied = false');
+    expect(before).not.toMatch(/\bawait\b/);
+    expect(body).toContain('onChange({ translateXBody: result.on })');
+  });
+
+  it('words the popup page button and progress for X post translation on x.com', () => {
+    expect(popup).toContain("let xBodyMode = $derived(view?.scope === 'x-body');");
+    expect(popup).toMatch(
+      /xBodyMode\s*\?\s*translated\s*\?\s*t\('xBodyStop'\)\s*:\s*t\('xBodyResume'\)/,
+    );
+    expect(popup).toContain("t(xBodyMode ? 'xBodyProgress' : 'pageProgress'");
+    expect(popup).toContain("t('xBodyScopeHint')");
+    expect(popup).toContain("t('xBodyPausedHint')");
+  });
+
+  it('runs only on x.com in the Chrome build and only once Sakutto can translate', () => {
+    expect(content).toContain('eligible: xBodySupported() && isXBodyPageUrl(location.href)');
+    expect(content).toMatch(/settingOn: liveSettings\.translateXBody/);
+    expect(content).toMatch(/auto: liveRule\.auto/);
+    expect(content).toMatch(/ready:\s*composeReadiness\([\s\S]{0,200}\) === 'ready'/);
+    // The bar's restore control and the page command stop or resume X post translation.
+    expect(content).toContain('if (xBody?.active) xBody.stop();');
+    expect(content).toContain('await xBody.toggle(command);');
+  });
+});
+
 /**
  * The typed box is a comparison, not a form with an output field. These assertions protect
  * the two things that make it one: two panes side by side, and a single column when the
