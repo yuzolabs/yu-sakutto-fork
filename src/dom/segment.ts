@@ -17,6 +17,12 @@ import {
 export interface TextSlot {
   node: Text;
   original: string;
+  /**
+   * True when `original` holds newlines the page paints as line breaks through its
+   * `white-space` (X post text). The renderer splits the source lines at them; under
+   * `white-space: normal` a newline in `original` is only indentation and this is false.
+   */
+  paintedNewlines: boolean;
 }
 
 export interface InlineFrame {
@@ -198,13 +204,15 @@ function buildFrame(
       if (!isKeptInlineText(value)) continue;
       const current = gaps[gaps.length - 1];
       if (!current) continue;
+      const hasNewline = /[\n\r]/u.test(value);
+      if (hasNewline) newlinesPainted ??= paintsNewlines(element);
+      const painted = hasNewline && newlinesPainted === true;
       // The slot keeps the raw text, so restoring the page puts the exact newlines back.
-      current.push({ node: child as Text, original: value });
-      if (/[\n\r]/u.test(value)) newlinesPainted ??= paintsNewlines(element);
+      current.push({ node: child as Text, original: value, paintedNewlines: painted });
       // A newline the page paints is a line of the content, just like a `<br>`. Without the
       // mark the whitespace collapse below turns it into a space, and a multi-line X post
       // reached the model, and came back, as one line.
-      source += newlinesPainted === true ? protectPaintedNewlines(value) : value;
+      source += painted ? protectPaintedNewlines(value) : value;
       continue;
     }
 
