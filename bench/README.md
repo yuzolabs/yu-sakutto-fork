@@ -92,6 +92,14 @@ pnpm bench:history --baseline <a> --compare <b>
 `bench/results/pages/<run>.md` is written by every run and holds the same tables; the JSONL file is
 the source of truth.
 
+`bench/history/pages.jsonl` is what `pnpm bench:history` reads. It starts at `mock-baseline-586254a`
+(24 rows, mock mode, 8 pages x 3 samples), recorded on this repository's import commit `586254a`
+(Linux x86_64). The previous 50 rows were measured in upstream jammaru/sakutto; their `commit`
+fields name commits that are not in this fork. They moved unchanged into
+`bench/history/pages-imported.jsonl` and stay there for reference only. Nothing validates or
+compares that file. Do not merge those rows back into `pages.jsonl`: the commit-existence test
+would fail again.
+
 Firefox cannot be driven by this Chromium harness. Manual Firefox GPU/CPU timings are recorded
 in `docs/FIREFOX.md` and `bench/results/pages/firefox-webgpu-kick-20261109.md`. Do not mix those
 rows with `pages.jsonl`.
