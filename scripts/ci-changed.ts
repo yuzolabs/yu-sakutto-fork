@@ -3,13 +3,10 @@ import { pathToFileURL } from 'node:url';
 
 const BUNDLE_FILES = new Set([
   '.github/workflows/ci.yml',
-  '.github/workflows/amo.yml',
   'scripts/package-artifact.ts',
-  'scripts/amo-source-package.ts',
   'scripts/web-ext-lint.ts',
   'scripts/compare-extension-builds.ts',
   'scripts/wllama-cache-key.ts',
-  'amo-metadata.json',
 ]);
 
 export interface ChangeScope {

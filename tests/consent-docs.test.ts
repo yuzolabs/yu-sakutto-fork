@@ -3,9 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { normalizeEol } from './support/eol';
 
 const privacy = normalizeEol(readFileSync(new URL('../PRIVACY.md', import.meta.url), 'utf8'));
-const reviewNotes = normalizeEol(
-  readFileSync(new URL('../docs/CWS_REVIEW_NOTES.md', import.meta.url), 'utf8'),
-);
 const readme = normalizeEol(readFileSync(new URL('../README.md', import.meta.url), 'utf8'));
 const readmeJa = normalizeEol(readFileSync(new URL('../README.ja.md', import.meta.url), 'utf8'));
 
@@ -59,8 +56,7 @@ describe('consent documentation', () => {
 
   /**
    * The policy describes categories of data, not the tree. Anything below a commit URL, a
-   * digest, or a `src/` path belongs in `docs/CWS_REVIEW_NOTES.md`, where it can be updated
-   * with the code instead of dragging the published policy along.
+   * digest, or a `src/` path stays out of the published policy and moves with the code.
    */
   it('does not turn the published policy back into an implementation spec', () => {
     expect(privacy).not.toMatch(/src\/[\w-]+\/[\w/-]+\.\w+/u);
@@ -72,20 +68,5 @@ describe('consent documentation', () => {
     // A "last updated" date is fine; a date the policy is re-checked against is not.
     expect(privacy).not.toMatch(/checked against the code/iu);
     expect(privacy).not.toMatch(/コードに合わせて確認/iu);
-  });
-
-  /**
-   * The facts removed from the policy are still checked, just where a reviewer or a
-   * maintainer can follow them to the code.
-   */
-  it('keeps reviewer-facing detail in the review notes', () => {
-    expect(reviewNotes).toContain('ageNoticeShown');
-    expect(reviewNotes).toContain('PLAMO_LICENSE_VERSION');
-    expect(reviewNotes).toContain('2026-11-05');
-    expect(reviewNotes).toMatch(/1,?200/u);
-    expect(reviewNotes).toMatch(/1,?000/u);
-    expect(reviewNotes).toContain('isTypedTextSelection');
-    // The notes say which of the two documents is the stable one.
-    expect(reviewNotes).toContain('stable user-facing policy');
   });
 });

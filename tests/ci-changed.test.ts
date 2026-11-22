@@ -65,7 +65,7 @@ describe('CI change scope', () => {
       code: true,
       bundle: true,
     });
-    expect(classifyChanges(['.github/workflows/amo.yml', 'scripts/web-ext-lint.ts'])).toEqual({
+    expect(classifyChanges(['.github/workflows/ci.yml', 'scripts/web-ext-lint.ts'])).toEqual({
       wllama: false,
       code: true,
       bundle: true,
