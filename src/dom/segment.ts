@@ -43,6 +43,8 @@ interface BuiltFrame {
   children: InlineFrame[];
   source: string;
   order: readonly ChildNode[];
+  /** True when a real `<br>`, here or in a nested frame, put a line break into `source`. */
+  hasBreakElement: boolean;
 }
 
 export function placeholderIds(model: Pick<SegmentModel, 'children'>): Set<string> {
@@ -144,6 +146,30 @@ function isLaidOutInline(element: Element): boolean {
   return display.startsWith('inline') || display === 'ruby' || display === 'ruby-text';
 }
 
+/** `white-space` values under which the browser paints a newline in the text as a line break. */
+const NEWLINE_WHITE_SPACE = new Set(['pre', 'pre-wrap', 'pre-line', 'break-spaces']);
+/** The `white-space-collapse` longhand values that keep newlines (the shorthand may read ''). */
+const NEWLINE_WHITE_SPACE_COLLAPSE = new Set(['preserve', 'preserve-breaks', 'break-spaces']);
+
+/**
+ * Whether the page paints the newlines inside this element's own text nodes as line breaks.
+ * X draws a multi-line post this way: the text node holds a literal `\n` and the CSS
+ * (`white-space: pre-wrap` / `break-spaces`) breaks the line, with no `<br>` in the markup.
+ * Under `white-space: normal` a newline is only the document's indentation and collapses.
+ * `white-space` is inherited, so the element's own computed value covers its text nodes.
+ */
+function paintsNewlines(element: Element): boolean {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+  if (!style) return false;
+  if (NEWLINE_WHITE_SPACE.has(style.whiteSpace)) return true;
+  return NEWLINE_WHITE_SPACE_COLLAPSE.has(style.whiteSpaceCollapse);
+}
+
+/** Marks each painted newline (`\r\n`, `\r` or `\n`) the way a real `<br>` is marked. */
+function protectPaintedNewlines(value: string): string {
+  return value.replace(/\r\n?|\n/gu, LINE_BREAK);
+}
+
 function buildFrame(
   element: Element,
   allocateId: () => string,
@@ -160,6 +186,11 @@ function buildFrame(
   const gaps: TextSlot[][] = [[]];
   const children: InlineFrame[] = [];
   let source = '';
+  let hasBreakElement = false;
+  // Read at most once per element, and only once one of its text nodes holds a newline:
+  // most text never needs the computed style, and the answer is the same for every text
+  // node of this element.
+  let newlinesPainted: boolean | undefined;
 
   for (const child of element.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
@@ -167,8 +198,13 @@ function buildFrame(
       if (!isKeptInlineText(value)) continue;
       const current = gaps[gaps.length - 1];
       if (!current) continue;
+      // The slot keeps the raw text, so restoring the page puts the exact newlines back.
       current.push({ node: child as Text, original: value });
-      source += value;
+      if (/[\n\r]/u.test(value)) newlinesPainted ??= paintsNewlines(element);
+      // A newline the page paints is a line of the content, just like a `<br>`. Without the
+      // mark the whitespace collapse below turns it into a space, and a multi-line X post
+      // reached the model, and came back, as one line.
+      source += newlinesPainted === true ? protectPaintedNewlines(value) : value;
       continue;
     }
 
@@ -221,6 +257,7 @@ function buildFrame(
     if (isAriaHiddenLeaf(child)) continue;
     if (child.tagName === 'BR') {
       source += LINE_BREAK;
+      hasBreakElement = true;
       continue;
     }
     if (isFrozenInline(child)) continue;
@@ -245,6 +282,13 @@ function buildFrame(
 
     const inner = buildFrame(child, allocateId, freezeValues, boundary);
     if (inner.source.trim().length === 0) continue;
+    // An inline element holding only painted newlines (X puts a lone `\n` span between two
+    // hashtag lines) has no words to translate. It stays in the DOM, still painting its
+    // line break, instead of becoming an empty placeholder the model could drop.
+    if (!inner.hasBreakElement && inner.source.replaceAll(LINE_BREAK, '').trim().length === 0) {
+      continue;
+    }
+    if (inner.hasBreakElement) hasBreakElement = true;
 
     const id = allocateId();
     children.push({
@@ -258,7 +302,7 @@ function buildFrame(
     source += `<${id}>${inner.source}</${id}>`;
   }
 
-  return { gaps, children, source, order };
+  return { gaps, children, source, order, hasBreakElement };
 }
 
 /**
@@ -276,8 +320,9 @@ const LINE_BREAK = '\uE000';
  *
  * Runs of whitespace inside a text slot collapse to a single space, and the whole source is
  * trimmed. A real `<br>` keeps its newline, because that break is content: a batch is joined
- * at newlines, so a block that spans lines must stay in a request of its own. The slot nodes
- * keep their original bytes, so restoring the page is unaffected.
+ * at newlines, so a block that spans lines must stay in a request of its own. A newline the
+ * page paints through `white-space` (see `paintsNewlines`) is marked the same way and kept
+ * too. The slot nodes keep their original bytes, so restoring the page is unaffected.
  */
 function collapseSource(value: string): string {
   return value

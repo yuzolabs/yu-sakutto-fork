@@ -62,6 +62,92 @@ describe('segment source', () => {
     expect(model.source).toContain('<i2>Datasets</i2>');
   });
 
+  it.each(['pre', 'pre-wrap', 'pre-line', 'break-spaces'])(
+    'keeps a newline that white-space: %s paints as a line of the source',
+    (whiteSpace) => {
+      // X draws a multi-line post with a literal `\n` in the text node and CSS that paints
+      // it, never a `<br>`. Collapsing that newline into a space sent the post to the model
+      // as one line.
+      document.body.innerHTML = `<div id="post" style="white-space: ${whiteSpace}"><span>First line\nSecond line</span></div>`;
+      const post = document.querySelector('#post');
+      if (!post) throw new Error('missing post');
+      const model = buildSegment(post);
+      if (!model) throw new Error('missing segment');
+
+      expect(model.source).toBe('<i1>First line\nSecond line</i1>');
+      // The slot keeps the raw text node value, so restore puts the same bytes back.
+      expect(model.children[0]?.gaps[0]?.[0]?.original).toBe('First line\nSecond line');
+    },
+  );
+
+  it('reads white-space from a stylesheet and through inheritance', () => {
+    document.head.innerHTML = '<style>.post-text { white-space: break-spaces; }</style>';
+    document.body.innerHTML =
+      '<div id="post" class="post-text"><span><em>Nested</em> first\nSecond</span></div>';
+    const post = document.querySelector('#post');
+    if (!post) throw new Error('missing post');
+    const model = buildSegment(post);
+    document.head.innerHTML = '';
+    if (!model) throw new Error('missing segment');
+
+    expect(model.source).toBe('<i2><i1>Nested</i1> first\nSecond</i2>');
+  });
+
+  it('still collapses the layout newlines of white-space: normal markup into a space', () => {
+    document.body.innerHTML = `<p id="lead">
+      First part of the sentence
+      and the rest of it.
+    </p>
+    <div id="normal" style="white-space: normal"><span>One\nTwo</span></div>`;
+    const lead = document.querySelector('#lead');
+    const normal = document.querySelector('#normal');
+    if (!lead || !normal) throw new Error('missing blocks');
+
+    expect(buildSegment(lead)?.source).toBe('First part of the sentence and the rest of it.');
+    expect(buildSegment(normal)?.source).toBe('<i1>One Two</i1>');
+  });
+
+  it('normalizes CRLF and keeps a blank line between painted paragraphs', () => {
+    const post = document.createElement('div');
+    post.style.whiteSpace = 'pre-wrap';
+    post.append('First paragraph.\r\n\r\nSecond paragraph.\rThird line.\n\nLast.');
+    document.body.replaceChildren(post);
+    const model = buildSegment(post);
+    if (!model) throw new Error('missing segment');
+
+    expect(model.source).toBe('First paragraph.\n\nSecond paragraph.\nThird line.\n\nLast.');
+    expect(model.gaps[0]?.[0]?.original).toBe(
+      'First paragraph.\r\n\r\nSecond paragraph.\rThird line.\n\nLast.',
+    );
+  });
+
+  it('keeps painted newlines inside a placeholder and a lone newline span out of the source', () => {
+    // X puts a span that holds only `\n` between two hashtag lines. It has no words, so it
+    // stays in the DOM painting its break instead of becoming an empty placeholder.
+    document.body.innerHTML =
+      '<div id="post" style="white-space: pre-wrap"><span>\nLaunch notes\n\n</span><a href="/hashtag/one">#one</a><span>\n</span><a href="/hashtag/two">#two</a></div>';
+    const post = document.querySelector('#post');
+    if (!post) throw new Error('missing post');
+    const model = buildSegment(post);
+    if (!model) throw new Error('missing segment');
+
+    expect(model.source).toBe('<i1>\nLaunch notes\n\n</i1><i2>#one</i2><i3>#two</i3>');
+    expect(model.children.map((child) => child.element.textContent)).toEqual([
+      '\nLaunch notes\n\n',
+      '#one',
+      '#two',
+    ]);
+  });
+
+  it('keeps a br-only inline element as a placeholder, as before painted newlines', () => {
+    document.body.innerHTML =
+      '<div id="mail" style="white-space: pre-wrap">Hello<span><br></span>World</div>';
+    const mail = document.querySelector('#mail');
+    if (!mail) throw new Error('missing mail');
+
+    expect(buildSegment(mail)?.source).toBe('Hello<i1>\n</i1>World');
+  });
+
   it('leaves an aria-hidden inline region to the block walk, as before this change', () => {
     // A decorative inline stays out of the parent's segment even when it wraps real text,
     // which is the pre-PR behaviour restored here. The block walk still descends into a
