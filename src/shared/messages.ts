@@ -54,6 +54,13 @@ export interface PageViewState {
   segmentsPerSecond: number | null;
   /** Visible prose that stayed in the source language because no segment could be built. */
   skipped: number;
+  /**
+   * `page` for a whole-page translation; `x-body` while X post translation owns the page and
+   * the popup's page button stops or resumes it for the tab. Older content scripts omit it.
+   */
+  scope?: string;
+  /** True after the reader stopped X post translation in this tab; a reload starts it again. */
+  stopped?: boolean;
 }
 
 const PAGE_COMMANDS: ReadonlySet<string> = new Set<PageCommandName>([
@@ -249,7 +256,9 @@ export function isPageViewState(value: unknown): value is PageViewState {
     typeof value.sameLanguage === 'boolean' &&
     (value.tokensPerSecond === null || typeof value.tokensPerSecond === 'number') &&
     (value.segmentsPerSecond === null || typeof value.segmentsPerSecond === 'number') &&
-    (value.skipped === undefined || (typeof value.skipped === 'number' && value.skipped >= 0))
+    (value.skipped === undefined || (typeof value.skipped === 'number' && value.skipped >= 0)) &&
+    (value.scope === undefined || typeof value.scope === 'string') &&
+    (value.stopped === undefined || typeof value.stopped === 'boolean')
   );
 }
 

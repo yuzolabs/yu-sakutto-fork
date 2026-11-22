@@ -209,7 +209,20 @@
       isMailHost(host) &&
       mailAccessGranted === false,
   );
-  let primaryLabel = $derived(translated ? t('restoreThisPage') : t('translateThisPage'));
+  /**
+   * X post translation owns this x.com tab: the page button stops and resumes it, and the
+   * progress counts post text, notes and Articles rather than the whole page.
+   */
+  let xBodyMode = $derived(view?.scope === 'x-body');
+  let primaryLabel = $derived(
+    xBodyMode
+      ? translated
+        ? t('xBodyStop')
+        : t('xBodyResume')
+      : translated
+        ? t('restoreThisPage')
+        : t('translateThisPage'),
+  );
   let folderNeedsPermission = $derived(sharedFolderNeedsPermission(engine?.sharedFolder));
   let showPendingFolderGrant = $derived(pendingFolderGrant && sharedFolderNeedsUserAction(engine));
   /**
@@ -886,7 +899,7 @@
   {/if}
   {#if view?.active && view.pending > 0 && view.total > 0}
     <p class="muted" aria-live="polite">
-      {t('pageProgress', [String(view.done), String(view.total)])}
+      {t(xBodyMode ? 'xBodyProgress' : 'pageProgress', [String(view.done), String(view.total)])}
     </p>
     <div
       class="track"
@@ -894,7 +907,7 @@
       aria-valuemin="0"
       aria-valuemax={view.total}
       aria-valuenow={view.done}
-      aria-label={t('pageProgressLabel')}
+      aria-label={t(xBodyMode ? 'xBodyProgressLabel' : 'pageProgressLabel')}
     >
       <span style="width: {(view.done / view.total) * 100}%"></span>
     </div>
@@ -905,10 +918,18 @@
     <p class="muted">{t('targetAdjustedNote')}</p>
   {/if}
   {#if view?.active && view.pending === 0 && view.skipped > 0}
-    <p class="muted" role="status">{t('pagePartial', [String(view.skipped)])}</p>
+    <p class="muted" role="status">
+      {t(xBodyMode ? 'xBodyPartial' : 'pagePartial', [String(view.skipped)])}
+    </p>
   {/if}
   {#if view?.sameLanguage}
     <p class="muted">{t('sameLanguageHint')}</p>
+  {/if}
+  {#if xBodyMode}
+    <p class="muted" data-sakutto="x-body-hint">{t('xBodyScopeHint')}</p>
+    {#if view?.stopped}
+      <p class="muted" role="status" data-sakutto="x-body-stopped">{t('xBodyPausedHint')}</p>
+    {/if}
   {/if}
 
   {#if settings && pageReady}

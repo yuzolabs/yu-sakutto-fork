@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Esta página já está escrita no idioma de destino."
   },
+  "xBodyStop": {
+    "message": "Parar a tradução de posts do X"
+  },
+  "xBodyResume": {
+    "message": "Retomar a tradução de posts do X"
+  },
+  "xBodyProgress": {
+    "message": "Traduzindo posts do X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Progresso da tradução de posts do X"
+  },
+  "xBodyDone": {
+    "message": "Os posts do X na tela foram traduzidos."
+  },
+  "xBodyPartial": {
+    "message": "Não foi possível traduzir $BLOCKS$ posts do X.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "No x.com, só o texto dos posts, as Notas da Comunidade e os Artigos são traduzidos, não a página inteira."
+  },
+  "xBodyPausedHint": {
+    "message": "A tradução de posts do X está parada nesta aba. As traduções do Grok continuam sendo trocadas pelo original. Ela volta a funcionar quando você recarregar a página."
+  },
   "displaySiteHint": {
     "message": "Esta escolha é lembrada para o site."
   },

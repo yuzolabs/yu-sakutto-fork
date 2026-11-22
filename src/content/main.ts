@@ -17,6 +17,8 @@ import {
   preferencesFor,
   type PageSelectionSnapshot,
 } from '@/dom/session';
+import { XBodyController } from '@/dom/x-body/controller';
+import { isXBodyPageUrl, xBodySupported } from '@/dom/x-body/sites';
 import { VideoCaptionSession, type CaptionSessionPreferences } from '@/captions/session';
 import type { CaptionOverlayLabels } from '@/captions/overlay';
 import { captionsAllowedOnPage, videoCaptionPositionSite } from '@/captions/sites';
@@ -67,6 +69,7 @@ import {
   requestEngineWarm,
   type PageCommandName,
   type PageInfo,
+  type PageViewState,
   type ShortcutQueryResult,
   type ShortcutSnapshot,
 } from '@/shared/messages';
@@ -316,7 +319,25 @@ function mailBannerPreferencesFor(
   };
 }
 
-function overlayLabels(): OverlayLabels {
+/**
+ * While X post translation owns an x.com tab, the bar describes that run: it translates post
+ * text, notes and Articles only, and its button stops it for the tab instead of restoring a
+ * whole-page translation.
+ */
+function overlayLabels(xBody = false): OverlayLabels {
+  const labels = pageOverlayLabels();
+  if (!xBody) return labels;
+  return {
+    ...labels,
+    barLabel: t('xBodyProgressLabel'),
+    barProgress: (done, total) => t('xBodyProgress', [String(done), String(total)]),
+    barDone: t('xBodyDone'),
+    barPartial: (blocks) => t('xBodyPartial', [String(blocks)]),
+    barOriginal: t('xBodyStop'),
+  };
+}
+
+function pageOverlayLabels(): OverlayLabels {
   return {
     original: t('originalLabel'),
     chromeNote: t('chromeTranslationNote'),
@@ -470,6 +491,11 @@ export function contentMain(): void {
     deliver: null,
   };
 
+  // X post translation: only on https://x.com/ in the Chrome build. The controller exists
+  // once the session does; `refreshXBody` re-reads the setting, the rule and the model state.
+  let xBody: XBodyController | null = null;
+  let refreshXBody: () => void = () => undefined;
+
   const sessionPromise = (async () => {
     const settings = await loadSettings();
     let liveSettings = settings;
@@ -491,6 +517,11 @@ export function contentMain(): void {
     const session = new PageSession(document, {
       engine,
       labels: overlayLabels(),
+      // While X post translation owns the tab, the bar's button stops it for this tab.
+      onBarOriginal: () => {
+        if (xBody?.active) xBody.stop();
+        else session.restore();
+      },
       folderGrantUiActive: folderNeedsUserAction,
       onFolderEnable: openFolderEnableWindow,
       preferences: preferencesFor(settings, rule, host),
@@ -664,6 +695,30 @@ export function contentMain(): void {
     gmailBanner.start();
     outlookBanner.start();
 
+    const warmForPage = (): void => {
+      if (__SAKUTTO_FAKE_ENGINE__) return;
+      void requestEngineWarm();
+      void requestEngineTier(session, false, captions);
+    };
+    xBody = new XBodyController(document, session, {
+      eligible: xBodySupported() && isXBodyPageUrl(location.href),
+      onModeChange: (on) => session.setLabels(overlayLabels(on)),
+      onStart: warmForPage,
+    });
+    refreshXBody = () => {
+      xBody?.update({
+        settingOn: liveSettings.translateXBody,
+        auto: liveRule.auto,
+        ready:
+          composeReadiness(
+            liveSettings,
+            modelState ? { state: modelState } : null,
+            plamoReady,
+            modelStatusKnown,
+          ) === 'ready',
+      });
+    };
+
     const detected = await detectDocumentLanguage(document);
     session.setDetectedLanguage(detected);
 
@@ -711,7 +766,7 @@ export function contentMain(): void {
       syncSelectionSuppression();
       engineSource = liveSettings.engineSource;
       shortcutsEnabled = liveSettings.shortcutsEnabled;
-      session.setLabels(overlayLabels());
+      session.setLabels(overlayLabels(xBody?.active === true));
       session.setPreferences(preferencesFor(liveSettings, liveRule, host));
       const readiness = composeReadiness(
         liveSettings,
@@ -736,6 +791,9 @@ export function contentMain(): void {
       outlookBanner?.setPreferences(
         mailBannerPreferencesFor(liveSettings, liveRule, host, 'outlook'),
       );
+      // Turning the setting off or a `never` rule stops X post translation at once and puts
+      // Sakutto's translations back; turning it on starts it without a reload.
+      refreshXBody();
     };
 
     subscribeSettings(() => {
@@ -767,11 +825,11 @@ export function contentMain(): void {
       window.setTimeout(() => void retryModelStatus(), 500);
     }
 
-    if (rule.auto === 'always') {
-      if (!__SAKUTTO_FAKE_ENGINE__) {
-        void requestEngineWarm();
-        void requestEngineTier(session, false, captions);
-      }
+    // On x.com with X post translation on, the controller starts the scoped run itself once
+    // Sakutto can translate; an `always` rule means the same thing there.
+    refreshXBody();
+    if (rule.auto === 'always' && !xBody.active) {
+      warmForPage();
       void session.translate();
     }
     return session;
@@ -786,6 +844,10 @@ export function contentMain(): void {
     session.setFolderGrantUiActive(folderNeedsUserAction);
   };
 
+  /** The page state the popup reads, with whether X post translation was stopped here. */
+  const pageView = (session: PageSession): PageViewState =>
+    xBody?.stopped ? { ...session.state(), stopped: true } : session.state();
+
   const run = async (
     command: PageCommandName,
     selection?: PageSelectionSnapshot | null,
@@ -795,7 +857,7 @@ export function contentMain(): void {
     // Compose re-entry is owned by the controller so a Chrome command that found no field
     // cannot swallow the page keydown (or a second command) that does.
     if (command !== 'compose' && lastCommand === command && now - lastCommandAt < 80) {
-      return (await sessionPromise).state();
+      return pageView(await sessionPromise);
     }
     lastCommand = command;
     lastCommandAt = now;
@@ -810,20 +872,26 @@ export function contentMain(): void {
     }
     if (command === 'compose') {
       if (shouldHandleComposeCommand(document)) compose?.handleShortcut(source);
-      return session.state();
+      return pageView(session);
     }
     const armed = await armFolderCommand(command);
     if (armed === 'deferred') {
       session.beginFolderGrantWait();
-      return session.state();
+      return pageView(session);
     }
     if (command === 'selection' && selection) {
       // The menu may have collapsed the document selection while the arm round-trip ran.
       session.translateSelection(selection.text, selection.rect);
-      return session.state();
+      return pageView(session);
     }
+    if (xBody?.active && (command === 'toggle' || command === 'restore')) {
+      // On x.com the page button stops or resumes X post translation for this tab.
+      await xBody.toggle(command);
+      return pageView(session);
+    }
+    if (xBody?.active && command === 'bilingual') xBody.noteStarted();
     await session.handle(command);
-    return session.state();
+    return pageView(session);
   };
   pageCommandBridge.deliver = (command, source) => {
     const selection = command === 'selection' ? capturePageSelection(document) : null;
@@ -921,6 +989,9 @@ export function contentMain(): void {
         }
         if (missingAfterRemoval) session.noteModelMissing();
         if (modelReturned) session.retryUntranslated();
+        // A model that finished loading (or went away) changes whether X post translation
+        // may turn off Grok translations and start.
+        refreshXBody();
         if (message.status.error === FOLDER_PERMISSION_ERROR) {
           folderNeedsUserAction = true;
           session.setFolderGrantUiActive(true);
@@ -940,7 +1011,7 @@ export function contentMain(): void {
       // Only the popup asks for page state: this is an explicit look at the page.
       markExplicitPageActivation();
       void sessionPromise.then((session) => {
-        sendResponse(session.state());
+        sendResponse(pageView(session));
       });
       return true;
     }

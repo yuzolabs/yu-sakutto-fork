@@ -217,6 +217,30 @@ describe('start controls while the model downloads', () => {
   });
 });
 
+describe('X post translation surfaces', () => {
+  const content = source('content/main.ts');
+
+  it('words the popup page button and progress for X post translation on x.com', () => {
+    expect(popup).toContain("let xBodyMode = $derived(view?.scope === 'x-body');");
+    expect(popup).toMatch(
+      /xBodyMode\s*\?\s*translated\s*\?\s*t\('xBodyStop'\)\s*:\s*t\('xBodyResume'\)/,
+    );
+    expect(popup).toContain("t(xBodyMode ? 'xBodyProgress' : 'pageProgress'");
+    expect(popup).toContain("t('xBodyScopeHint')");
+    expect(popup).toContain("t('xBodyPausedHint')");
+  });
+
+  it('runs only on x.com in the Chrome build and only once Sakutto can translate', () => {
+    expect(content).toContain('eligible: xBodySupported() && isXBodyPageUrl(location.href)');
+    expect(content).toMatch(/settingOn: liveSettings\.translateXBody/);
+    expect(content).toMatch(/auto: liveRule\.auto/);
+    expect(content).toMatch(/ready:\s*composeReadiness\([\s\S]{0,200}\) === 'ready'/);
+    // The bar's restore control and the page command stop or resume X post translation.
+    expect(content).toContain('if (xBody?.active) xBody.stop();');
+    expect(content).toContain('await xBody.toggle(command);');
+  });
+});
+
 /**
  * The typed box is a comparison, not a form with an output field. These assertions protect
  * the two things that make it one: two panes side by side, and a single column when the

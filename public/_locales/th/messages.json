@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "หน้านี้เขียนด้วยภาษาเป้าหมายแล้ว"
   },
+  "xBodyStop": {
+    "message": "หยุดการแปลโพสต์ X"
+  },
+  "xBodyResume": {
+    "message": "แปลโพสต์ X ต่อ"
+  },
+  "xBodyProgress": {
+    "message": "กำลังแปลโพสต์ X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "ความคืบหน้าการแปลโพสต์ X"
+  },
+  "xBodyDone": {
+    "message": "แปลโพสต์ X ที่แสดงบนหน้าจอแล้ว"
+  },
+  "xBodyPartial": {
+    "message": "แปลโพสต์ X ไม่ได้ $BLOCKS$ รายการ",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "บน x.com จะแปลเฉพาะข้อความโพสต์ บันทึกชุมชน และบทความ ไม่ได้แปลทั้งหน้า"
+  },
+  "xBodyPausedHint": {
+    "message": "หยุดการแปลโพสต์ X ในแท็บนี้แล้ว การแปลของ Grok ยังคงถูกสลับกลับเป็นต้นฉบับ และจะเริ่มใหม่เมื่อโหลดหน้าเว็บใหม่"
+  },
   "displaySiteHint": {
     "message": "ตัวเลือกนี้จะถูกจดจำไว้สำหรับเว็บไซต์"
   },

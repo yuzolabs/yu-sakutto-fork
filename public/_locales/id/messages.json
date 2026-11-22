@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Halaman ini sudah ditulis dalam bahasa target."
   },
+  "xBodyStop": {
+    "message": "Hentikan terjemahan postingan X"
+  },
+  "xBodyResume": {
+    "message": "Lanjutkan terjemahan postingan X"
+  },
+  "xBodyProgress": {
+    "message": "Menerjemahkan postingan X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Progres terjemahan postingan X"
+  },
+  "xBodyDone": {
+    "message": "Postingan X di layar sudah diterjemahkan."
+  },
+  "xBodyPartial": {
+    "message": "$BLOCKS$ postingan X tidak dapat diterjemahkan.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "Di x.com, hanya teks postingan, Catatan Komunitas, dan Artikel yang diterjemahkan, bukan seluruh halaman."
+  },
+  "xBodyPausedHint": {
+    "message": "Terjemahan postingan X dihentikan di tab ini. Terjemahan Grok tetap dialihkan ke teks aslinya. Terjemahan dimulai lagi saat Anda memuat ulang halaman."
+  },
   "displaySiteHint": {
     "message": "Pilihan ini diingat untuk situs tersebut."
   },

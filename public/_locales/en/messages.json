@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "This page is already written in the target language."
   },
+  "xBodyStop": {
+    "message": "Stop X post translation"
+  },
+  "xBodyResume": {
+    "message": "Resume X post translation"
+  },
+  "xBodyProgress": {
+    "message": "Translating X posts $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "X post translation progress"
+  },
+  "xBodyDone": {
+    "message": "The X posts on screen are translated."
+  },
+  "xBodyPartial": {
+    "message": "$BLOCKS$ X posts could not be translated.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "On x.com, only post text, Community Notes, and Articles are translated, not the whole page."
+  },
+  "xBodyPausedHint": {
+    "message": "X post translation is stopped in this tab. Grok translations are still switched to the original. It starts again when you reload the page."
+  },
   "displaySiteHint": {
     "message": "This choice is remembered for the site."
   },

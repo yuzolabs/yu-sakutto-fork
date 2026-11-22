@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "このページは、すでに翻訳先の言語で書かれています。"
   },
+  "xBodyStop": {
+    "message": "X本文翻訳を停止"
+  },
+  "xBodyResume": {
+    "message": "X本文翻訳を再開"
+  },
+  "xBodyProgress": {
+    "message": "X本文 $DONE$ / $TOTAL$ 件を翻訳中",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "X本文翻訳の進み具合"
+  },
+  "xBodyDone": {
+    "message": "表示中のX本文を翻訳しました。"
+  },
+  "xBodyPartial": {
+    "message": "翻訳できなかったX本文が $BLOCKS$ 件あります。",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "x.com ではポスト本文・コミュニティノート・記事だけを訳します（ページ全体は訳しません）。"
+  },
+  "xBodyPausedHint": {
+    "message": "このタブでは X本文翻訳を停止しています。Grok翻訳の解除は続けます。ページを再読み込みすると再開します。"
+  },
   "displaySiteHint": {
     "message": "この選択は、このサイトに記憶されます。"
   },

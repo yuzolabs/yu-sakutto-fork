@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Trang này đã được viết bằng ngôn ngữ mục tiêu."
   },
+  "xBodyStop": {
+    "message": "Dừng dịch bài đăng X"
+  },
+  "xBodyResume": {
+    "message": "Tiếp tục dịch bài đăng X"
+  },
+  "xBodyProgress": {
+    "message": "Đang dịch bài đăng X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Tiến độ dịch bài đăng X"
+  },
+  "xBodyDone": {
+    "message": "Các bài đăng X trên màn hình đã được dịch."
+  },
+  "xBodyPartial": {
+    "message": "Không thể dịch $BLOCKS$ bài đăng X.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "Trên x.com, chỉ văn bản bài đăng, Ghi chú cộng đồng và Bài viết được dịch, không phải toàn bộ trang."
+  },
+  "xBodyPausedHint": {
+    "message": "Đã dừng dịch bài đăng X trong tab này. Bản dịch của Grok vẫn được chuyển về bản gốc. Tính năng sẽ chạy lại khi bạn tải lại trang."
+  },
   "displaySiteHint": {
     "message": "Lựa chọn này sẽ được ghi nhớ cho trang web."
   },

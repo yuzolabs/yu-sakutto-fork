@@ -695,9 +695,11 @@ describe('content wiring for the passive injection', () => {
     )?.[0];
     expect(offer).toBeDefined();
     expect(offer).not.toContain('translate(');
-    // The only automatic full-page translation stays the site rule's auto: 'always'.
+    // The only automatic full-page translation stays the site rule's auto: 'always'. On
+    // x.com with X post translation on, the same rule starts the scoped run instead, which
+    // the X post translation controller owns.
     const autoBlock =
-      /if \(rule\.auto === 'always'\) \{[\s\S]*?void session\.translate\(\);[\s\S]*?\}/.exec(
+      /if \(rule\.auto === 'always' && !xBody\.active\) \{[\s\S]*?void session\.translate\(\);[\s\S]*?\}/.exec(
         source,
       )?.[0];
     expect(autoBlock).toBeDefined();

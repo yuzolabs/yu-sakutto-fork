@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "이 페이지는 이미 대상 언어로 작성되어 있습니다."
   },
+  "xBodyStop": {
+    "message": "X 게시글 번역 중단"
+  },
+  "xBodyResume": {
+    "message": "X 게시글 번역 재개"
+  },
+  "xBodyProgress": {
+    "message": "X 게시글 번역 중 $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "X 게시글 번역 진행 상황"
+  },
+  "xBodyDone": {
+    "message": "화면에 표시된 X 게시글을 번역했습니다."
+  },
+  "xBodyPartial": {
+    "message": "X 게시글 $BLOCKS$개를 번역하지 못했습니다.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "x.com에서는 페이지 전체가 아니라 게시글 텍스트, 커뮤니티 노트, 기사만 번역합니다."
+  },
+  "xBodyPausedHint": {
+    "message": "이 탭에서는 X 게시글 번역이 중단되었습니다. Grok 번역은 계속 원문으로 전환됩니다. 페이지를 새로 고치면 다시 시작됩니다."
+  },
   "displaySiteHint": {
     "message": "이 선택 사항은 사이트에 기억됩니다."
   },

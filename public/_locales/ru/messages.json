@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "На этой странице уже написано на целевом языке."
   },
+  "xBodyStop": {
+    "message": "Остановить перевод постов X"
+  },
+  "xBodyResume": {
+    "message": "Возобновить перевод постов X"
+  },
+  "xBodyProgress": {
+    "message": "Перевод постов X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Ход перевода постов X"
+  },
+  "xBodyDone": {
+    "message": "Посты X на экране переведены."
+  },
+  "xBodyPartial": {
+    "message": "Не удалось перевести постов X: $BLOCKS$.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "На x.com переводятся только тексты постов, заметки сообщества и статьи, а не вся страница."
+  },
+  "xBodyPausedHint": {
+    "message": "Перевод постов X в этой вкладке остановлен. Переводы Grok по-прежнему заменяются оригиналом. Он снова запустится после перезагрузки страницы."
+  },
   "displaySiteHint": {
     "message": "Этот выбор запоминается для сайта."
   },

@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Questa pagina è già scritta nella lingua target."
   },
+  "xBodyStop": {
+    "message": "Interrompi la traduzione dei post di X"
+  },
+  "xBodyResume": {
+    "message": "Riprendi la traduzione dei post di X"
+  },
+  "xBodyProgress": {
+    "message": "Traduzione dei post di X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Avanzamento della traduzione dei post di X"
+  },
+  "xBodyDone": {
+    "message": "I post di X sullo schermo sono tradotti."
+  },
+  "xBodyPartial": {
+    "message": "Non è stato possibile tradurre $BLOCKS$ post di X.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "Su x.com vengono tradotti solo il testo dei post, le Note della community e gli Articoli, non l’intera pagina."
+  },
+  "xBodyPausedHint": {
+    "message": "La traduzione dei post di X è interrotta in questa scheda. Le traduzioni di Grok vengono comunque sostituite dall’originale. Riprende quando ricarichi la pagina."
+  },
   "displaySiteHint": {
     "message": "Questa scelta viene memorizzata per il sito."
   },
