@@ -34,18 +34,14 @@ Measured before `checks` was split (GitHub-hosted `ubuntu-latest`). The miss is 
 
 ## Workflows
 
-| Workflow               | Trigger                                                                                         | Purpose                                                                                                          | Needed on           |
-| ---------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `ci.yml`               | `pull_request` (including drafts and `ready_for_review`), `push` to `main`, `workflow_dispatch` | Lint, format, typecheck, unit tests, e2e, pinned-wllama check, Chrome/Firefox package when the zip inputs change | PRs and main        |
-| `model-pins.yml`       | same PR/main events, plus daily `17 3 * * *`                                                    | Range-check upstream `resolve/main` GGUF hash/size against the catalog's known revisions                         | PRs, main, schedule |
-| `release.yml`          | `v*` tags, `workflow_dispatch`                                                                  | Recheck the tag, compile wllama from source, zip Chrome, draft GitHub Release, optional CWS upload               | Tags only           |
-| `chrome-web-store.yml` | `workflow_dispatch` only                                                                        | Upload (and optionally publish) the Chrome zip                                                                   | Manual              |
-| `amo.yml`              | `workflow_dispatch` only                                                                        | Sign and submit the Firefox zip to AMO listed                                                                    | Manual              |
-| `pr-labeler.yml`       | `pull_request_target`                                                                           | Path labels from `.github/labeler.yml` on the base branch                                                        | PRs                 |
-| `community.yml`        | new issues / PRs                                                                                | Welcome comment and `needs-triage` on first issues                                                               | Issues/PRs          |
-| `labels.yml`           | changes to `.github/labels.yml`                                                                 | Sync issue labels; dry-run on PRs                                                                                | Rare                |
-
-Do not dispatch `chrome-web-store.yml` or `amo.yml` from a pull request.
+| Workflow         | Trigger                                                                                         | Purpose                                                                                                          | Needed on           |
+| ---------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `ci.yml`         | `pull_request` (including drafts and `ready_for_review`), `push` to `main`, `workflow_dispatch` | Lint, format, typecheck, unit tests, e2e, pinned-wllama check, Chrome/Firefox package when the zip inputs change | PRs and main        |
+| `model-pins.yml` | same PR/main events, plus daily `17 3 * * *`                                                    | Range-check upstream `resolve/main` GGUF hash/size against the catalog's known revisions                         | PRs, main, schedule |
+| `release.yml`    | `v*` tags, `workflow_dispatch`                                                                  | Recheck the tag, compile wllama from source, zip Chrome, draft GitHub Release                                    | Tags only           |
+| `pr-labeler.yml` | `pull_request_target`                                                                           | Path labels from `.github/labeler.yml` on the base branch                                                        | PRs                 |
+| `community.yml`  | new issues / PRs                                                                                | Welcome comment and `needs-triage` on first issues                                                               | Issues/PRs          |
+| `labels.yml`     | changes to `.github/labels.yml`                                                                 | Sync issue labels; dry-run on PRs                                                                                | Rare                |
 
 ### CI jobs
 
@@ -58,7 +54,7 @@ Do not dispatch `chrome-web-store.yml` or `amo.yml` from a pull request.
 | `checks`                             | < 10 s                         | Always after the split jobs. Aggregate pass/fail only; keeps the branch-protection name stable even when e2e is skipped for a docs-only PR.                           |
 | `pinned-wllama`                      | ~10–20 s                       | Always. `node scripts/wllama/build.ts --check`.                                                                                                                       |
 | `wllama`                             | measured 9s hit / 10m 18s miss | Manual runs, PRs that touch zip/wllama inputs, and code pushes to `main`. One compile. Saves the cache before packaging.                                              |
-| `Package chrome` / `Package firefox` | ~1–2 min after wllama          | Same condition as `wllama`. Restore the artifact; do not compile again. Firefox keeps `web-ext lint`, the second zip, and the source-zip rebuild.                     |
+| `Package chrome` / `Package firefox` | ~1–2 min after wllama          | Same condition as `wllama`. Restore the artifact; do not compile again. Firefox keeps `web-ext lint` and the second zip.                                              |
 
 `checks-static`, `checks-unit`, and the three e2e shards start together after `changes`. Playwright runs with `fullyParallel: true` and two workers in CI (`workers: 1` locally), so shard boundaries divide individual tests instead of whole files; the large video-captions spec no longer lands on a single shard. Every install job restores the pnpm cache; the e2e shards also share the Playwright Chromium cache. Docs-only pull requests skip e2e, while static and unit still run. Push to `main` and `workflow_dispatch` never skip e2e. The aggregate `checks` job does not rerun tests; it fails if any needed job failed or was cancelled and succeeds if e2e was intentionally skipped.
 
@@ -109,12 +105,11 @@ cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 PR pushes cancel the previous run on that branch. `main` and tags do not cancel. The v1.3.0 release spent 12–17 min compiling because the #63 merge run was cancelled ~7 min in and never saved the cache.
 
-## Release and the Chrome Web Store
+## Release
 
 - `release.yml` Checks uses `fetch-depth: 0` (same reason as CI `checks`).
 - `release.yml` Package sets `from-source: true` on `.github/actions/package-extension`. It does not restore a CI wasm cache. `wllama-build.json` still records inputs and output hashes.
-- The GitHub Release stays a draft. Tag push uploads to CWS only when the `CWS_*` secrets are set; it does not publish.
-- `chrome-web-store.yml` and `amo.yml` stay manual. They use the same package action (cache restore is allowed there so a maintainer is not forced through a 15 min compile to re-upload). The tag workflow is the from-source path.
+- The GitHub Release stays a draft.
 - Do not print secrets. Workflows pass them through `env:` and never `run: echo`.
 
 ## When CI is slow
@@ -132,7 +127,7 @@ PR pushes cancel the previous run on that branch. `main` and tags do not cancel.
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `bench-fixtures` cannot find a commit         | Shallow clone. The job needs `fetch-depth: 0`.                                                                                    |
 | No CI on a PR, only labels/welcome            | Almost always a **merge conflict**. GitHub skips `pull_request` workflows until it is rebaseable. Draft vs ready is not the skip. |
-| `Package chrome` green, `Package firefox` red | Firefox-only lint or source-zip rebuild. The wasm cache is already saved.                                                         |
+| `Package chrome` green, `Package firefox` red | Firefox-only lint or second-zip compare. The wasm cache is already saved.                                                         |
 | `range` (model pins) red, HTTP 429/5xx        | Transient Hugging Face. The checker retries twice. Re-run the job if it still failed. HTTP 403/size mismatch is a real pin drift. |
 | `checks` red                                  | Open the failed split job (`checks-static`, `checks-unit`, or an `e2e` shard). There is no test retry.                            |
 | Tag `Release` red on unit tests               | Confirm `fetch-depth: 0` is still on that job.                                                                                    |
@@ -145,7 +140,7 @@ These run on every PR (including drafts, once the PR is mergeable):
 - `checks-unit`: `pnpm test`, `pnpm bench:equality --check`
 - `e2e`: `pnpm test:e2e` in three Playwright shards, unless the PR is docs-only (`code=false`)
 - `node scripts/wllama/build.ts --check`
-- Chrome zip, worker smoke test, Firefox `web-ext lint`, second-build compare, and source-zip rebuild **when zip inputs change**; on `main`, also when any non-docs code changes
+- Chrome zip, worker smoke test, Firefox `web-ext lint`, and second-build compare **when zip inputs change**; on `main`, also when any non-docs code changes
 
 Docs-only pull requests still run static and unit checks; they only skip the browser e2e shards. Push to `main` and manual runs never skip e2e. Assertions are not weakened. Live model benches stay out of CI.
 

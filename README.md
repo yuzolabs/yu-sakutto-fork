@@ -5,10 +5,6 @@
   <h1>Sakutto</h1>
   <p><strong>Translate pages, PDFs, videos, and the text you type — locally, with PLaMo.</strong></p>
   <p>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/v/mhlbjjijfkoghmcjndgdimhdlfkhadfl?logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store" alt="Chrome Web Store"></a>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/users/mhlbjjijfkoghmcjndgdimhdlfkhadfl" alt="Chrome Web Store users"></a>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/rating/mhlbjjijfkoghmcjndgdimhdlfkhadfl" alt="Chrome Web Store rating"></a>
-    <a href="https://addons.mozilla.org/firefox/addon/sakutto-local-ai-translation/"><img src="https://img.shields.io/amo/v/sakutto-local-ai-translation?logo=firefoxbrowser&logoColor=white&label=Firefox%20Add-ons" alt="Firefox Add-ons"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="Latest release"></a>
     <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
@@ -127,18 +123,20 @@ For PLaMo's 53 languages, every translated line comes from PLaMo. On Chrome, Chr
 
 ## Install
 
-Sakutto is published on both stores:
+This fork is not published to any browser store. The original Sakutto ([jammaru/sakutto](https://github.com/jammaru/sakutto)) can be installed from its store listings:
 
 - **Chrome Web Store** — [Sakutto - Local AI translation](https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl) (Chrome 116 or later).
 - **Firefox Add-ons** — [Sakutto - Local AI translation](https://addons.mozilla.org/firefox/addon/sakutto-local-ai-translation/) (Firefox 153 or later).
 
+To use this fork's own build, build it from source as described in [docs/BUILDING.md](docs/BUILDING.md) (for example `pnpm build`) and load the unpacked extension.
+
 **Up and running in three steps:**
 
-1. Install from your browser's store, then pin Sakutto to the toolbar.
+1. Install the original Sakutto from your browser's store, or load this fork's unpacked build from source, then pin Sakutto to the toolbar.
 2. Open the popup and choose **Translate this page** — or press Alt+A (Option+A on a Mac).
 3. Accept the PLaMo licence and let the one-time model download finish. After that, translation runs on your device and works offline.
 
-No account is needed. The model weights are not in this repository or in the store package.
+No account is needed. The model weights are not in this repository or in the extension package.
 
 ## Shortcuts
 
@@ -240,8 +238,8 @@ pnpm format:check
 pnpm typecheck
 pnpm test
 pnpm test:e2e       # local fixtures; does not download the model
-pnpm zip            # Chrome Web Store zip in .output
-pnpm zip:firefox    # Firefox zip; then pnpm source:firefox for the AMO source zip
+pnpm zip            # Chrome zip in .output
+pnpm zip:firefox    # Firefox zip
 ```
 
 `pnpm build` copies the pinned `pdfjs-dist` build into the package first (`pnpm pdfjs` runs that step alone). The reader loads it from a packaged file because pdf.js resolves its worker, CMaps, and standard font substitutes relative to itself.

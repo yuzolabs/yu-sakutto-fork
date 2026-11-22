@@ -47,7 +47,7 @@ Opening a PDF makes one request to the site the PDF tab is already on, asking fo
 
 If you enable a local server, the extension also sends translation requests to the address you set. That process can see the text being translated. The developer does not receive it.
 
-If you installed the extension from the Chrome Web Store or from addons.mozilla.org, the browser may update it. That is the browser's own request, not one this extension makes.
+If the browser updates an extension it installed, that is the browser's own request, not one this extension makes.
 
 ## Stored on your device
 
@@ -77,7 +77,7 @@ The extension has a single purpose: translating web pages. The text it reads, yo
 
 ## Contact
 
-Questions about this policy can be opened as an issue at https://github.com/yuzolabs/yu-sakutto-fork/issues. The source code is at https://github.com/yuzolabs/yu-sakutto-fork. The Chrome Web Store listing is at https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl.
+Questions about this policy can be opened as an issue at https://github.com/yuzolabs/yu-sakutto-fork/issues. The source code is at https://github.com/yuzolabs/yu-sakutto-fork.
 
 # プライバシーポリシー
 
@@ -128,7 +128,7 @@ PDF を開くときは、その PDF のタブがすでに表示しているサ�
 
 ローカルサーバーを有効にすると、設定したアドレスへ翻訳リクエストも送ります。そのプロセスは翻訳する文字を見られます。開発者は受け取りません。
 
-Chrome ウェブストアまたは addons.mozilla.org から入れた場合、ブラウザが拡張機能を更新することがあります。それはブラウザ自身の通信で、この拡張機能が行うものではありません。
+ブラウザがインストールした拡張機能を更新することがあります。それはブラウザ自身の通信で、この拡張機能が行うものではありません。
 
 ## 端末に保存するもの
 
@@ -158,4 +158,4 @@ Chrome ウェブストアまたは addons.mozilla.org から入れた場合、�
 
 ## 連絡先
 
-このポリシーについての質問は、https://github.com/yuzolabs/yu-sakutto-fork/issues の issue で受けます。ソースコードは https://github.com/yuzolabs/yu-sakutto-fork に、Chrome ウェブストアの掲載は https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl にあります。
+このポリシーについての質問は、https://github.com/yuzolabs/yu-sakutto-fork/issues の issue で受けます。ソースコードは https://github.com/yuzolabs/yu-sakutto-fork にあります。

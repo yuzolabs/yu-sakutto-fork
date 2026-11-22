@@ -759,10 +759,10 @@ key is `wllama-v2-<hash>` from `scripts/wllama-cache-key.ts` (applied patches, b
 `firefox-webgpu-kick.ts`; not `patches/optional/`). A restored cache is verified before packaging.
 The emsdk image is cached the same way. A cache miss compiles with `emscripten/emsdk:4.0.20` and
 then saves both caches from the `wllama` job, before packaging, so a later package failure does not
-lose the compile. The Chrome job uploads `chrome-mv3-zip` (the store zip from `pnpm zip`) and
+lose the compile. The Chrome job uploads `chrome-mv3-zip` (the Chrome zip from `pnpm zip`) and
 `chrome-mv3` (the unpacked extension), and fails if the zip is missing or smaller than 1 MiB. The
-Firefox job runs `pnpm zip:firefox`, `web-ext lint` (0 errors), a second build compared with
-`scripts/compare-extension-builds.ts`, and a rebuild from `pnpm source:firefox`. See
+Firefox job runs `pnpm zip:firefox`, `web-ext lint` (0 errors), and a second build compared with
+`scripts/compare-extension-builds.ts`. See
 [docs/CI.md](CI.md).
 
 ## Troubleshooting
