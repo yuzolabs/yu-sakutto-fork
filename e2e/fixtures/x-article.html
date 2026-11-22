@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>X</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0 auto;
+        width: 640px;
+      }
+      [data-testid='tweetPhoto'] {
+        width: 200px;
+        height: 100px;
+        background: #eee;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Synthetic X Article page. The element structure follows x.com's article reader: a title,
+      the author row, the read-only rich-text body whose blocks are `[data-block]`, media
+      sections with captions, and the follow card at the end. Every name and text is made up.
+    -->
+    <main role="main">
+      <article role="article" tabindex="-1" data-testid="twitterArticleReadView">
+        <div>
+          <div>
+            <div><img alt="" src="" /></div>
+          </div>
+        </div>
+        <div>
+          <div>
+            <div dir="auto" data-testid="twitter-article-title">
+              <span>Notes on translating text on your own computer</span>
+            </div>
+          </div>
+          <div>
+            <div itemprop="author" itemscope="" itemtype="https://schema.org/Person">
+              <a href="/fixture_kappa" role="link"><span>Kappa Author</span></a>
+              <span>@fixture_kappa</span>
+            </div>
+            <button role="button" type="button"><span>Follow this author</span></button>
+          </div>
+          <div role="group" aria-label="3 replies, 2 reposts">
+            <button data-testid="reply" aria-label="Reply" type="button"><span>3</span></button>
+          </div>
+          <div data-testid="twitterArticleRichTextView">
+            <div>
+              <div>
+                <div
+                  aria-describedby="placeholder-fixture"
+                  contenteditable="false"
+                  data-testid="longformRichTextComponent"
+                  spellcheck="false"
+                >
+                  <div data-contents="true">
+                    <div data-block="true" data-editor="fixture" data-offset-key="a-0-0">
+                      <div data-offset-key="a-0-0">
+                        <span data-offset-key="a-0-0"
+                          ><span data-text="true"
+                            >Running a translation model locally keeps your text on the
+                            device.</span
+                          ></span
+                        >
+                      </div>
+                    </div>
+                    <h2 data-block="true" data-editor="fixture" data-offset-key="b-0-0">
+                      <div data-offset-key="b-0-0">
+                        <span data-offset-key="b-0-0"
+                          ><span data-text="true">Why it matters</span></span
+                        >
+                      </div>
+                    </h2>
+                    <ul>
+                      <li data-block="true" data-editor="fixture" data-offset-key="c-0-0">
+                        <div data-offset-key="c-0-0">
+                          <span data-offset-key="c-0-0"
+                            ><span data-text="true">Nothing leaves the browser.</span></span
+                          >
+                        </div>
+                      </li>
+                      <li data-block="true" data-editor="fixture" data-offset-key="d-0-0">
+                        <div data-offset-key="d-0-0">
+                          <span data-offset-key="d-0-0"
+                            ><span data-text="true">It keeps working offline.</span></span
+                          >
+                        </div>
+                      </li>
+                    </ul>
+                    <section
+                      data-block="true"
+                      data-editor="fixture"
+                      data-offset-key="e-0-0"
+                      contenteditable="false"
+                    >
+                      <div>
+                        <a
+                          href="/fixture_kappa/article/2001/media/1"
+                          aria-describedby="caption-2001"
+                          role="link"
+                        >
+                          <div aria-label="画像" data-testid="tweetPhoto">
+                            <img alt="画像" src="" />
+                          </div>
+                        </a>
+                      </div>
+                      <div id="caption-2001">
+                        <div
+                          aria-describedby="placeholder-caption"
+                          contenteditable="false"
+                          data-testid="longformRichTextComponent"
+                          spellcheck="false"
+                        >
+                          <div data-contents="true">
+                            <div data-block="true" data-editor="caption" data-offset-key="f-0-0">
+                              <div data-offset-key="f-0-0">
+                                <span data-offset-key="f-0-0"
+                                  ><span data-text="true"
+                                    >A laptop running the model without a network.</span
+                                  ></span
+                                >
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                    <section
+                      data-block="true"
+                      data-editor="fixture"
+                      data-offset-key="g-0-0"
+                      contenteditable="false"
+                    >
+                      <div data-testid="tweetPhoto">
+                        <div data-testid="videoPlayer">
+                          <video aria-label="Embedded video" preload="none"></video>
+                          <span>GIF</span>
+                          <button aria-label="Play video" type="button"></button>
+                        </div>
+                      </div>
+                    </section>
+                    <div data-block="true" data-editor="fixture" data-offset-key="h-0-0">
+                      <div data-offset-key="h-0-0">
+                        <span data-offset-key="h-0-0"
+                          ><span data-text="true">最後の段落は日本語で書かれています。</span></span
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div role="separator"></div>
+          <li role="listitem" tabindex="-1" data-testid="UserCell">
+            <span>Kappa Author</span>
+            <button type="button"><span>Follow this author</span></button>
+          </li>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
