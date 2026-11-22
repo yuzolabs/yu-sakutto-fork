@@ -12,6 +12,7 @@ import {
   injectCaptionPages,
   injectGmailBannerPages,
   injectOutlookBannerPages,
+  injectXBodyPages,
   installPageActionListeners,
   installPageActions,
   openPdfForTabReason,
@@ -149,6 +150,7 @@ export default defineBackground(() => {
       void injectGmailBannerPages();
       void injectOutlookBannerPages();
     }
+    if (settings.translateXBody) void injectXBodyPages();
   });
   void ensureSettings().then((settings) => {
     void syncCaptionCustomContentScripts(settings.captionCustomHosts);
@@ -159,6 +161,8 @@ export default defineBackground(() => {
       void injectGmailBannerPages();
       void injectOutlookBannerPages();
     }
+    // An extension reload leaves open x.com tabs without a content script until they load again.
+    if (settings.translateXBody) void injectXBodyPages();
   });
   browser.permissions.onAdded?.addListener((granted) => {
     void settleCaptionEnableIntent(
@@ -171,6 +175,7 @@ export default defineBackground(() => {
     void syncAllSitesContentScripts();
     void injectGmailBannerPages();
     void injectOutlookBannerPages();
+    void injectXBodyPages();
   });
   browser.permissions.onRemoved?.addListener(() => {
     void syncMailContentScripts();

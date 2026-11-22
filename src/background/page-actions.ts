@@ -3,6 +3,12 @@ import { shouldAutoInjectCaptions } from '@/captions/sites';
 import { shouldAutoInjectGmailBanner } from '@/dom/gmail-banner';
 import { shouldAutoInjectOutlookBanner } from '@/dom/outlook-banner';
 import { originPattern, pageHost, loadSiteRule } from '@/dom/sites';
+import {
+  isXBodyPageUrl,
+  shouldAutoInjectXBody,
+  xBodyPermissionOrigins,
+  xBodySupported,
+} from '@/dom/x-body/sites';
 import { ensureContentScript } from '@/shared/page-bridge';
 import { requestPageCommand, type PageCommandName } from '@/shared/messages';
 import { noteShortcutCommandAssigned } from '@/shared/shortcut-assignment';
@@ -70,6 +76,7 @@ export function installPageActionListeners(engine?: EngineClient): void {
     void injectIfCaptions(tabId, tab.url);
     void injectIfGmailBanner(tabId, tab.url);
     void injectIfOutlookBanner(tabId, tab.url);
+    void injectIfXBody(tabId, tab.url);
   });
 
   browser.tabs.onRemoved.addListener((tabId) => {
@@ -281,6 +288,43 @@ async function injectIfOutlookBanner(tabId: number, url: string): Promise<void> 
     return;
   }
   await ensureContentScript(tabId);
+}
+
+/**
+ * x.com tabs run the content script while X post translation is on and the origin is
+ * granted. The page itself decides whether to start: the site rule and the model state are
+ * read there, so a `never` rule or an unready engine keeps an injected page quiet.
+ */
+export async function injectIfXBody(tabId: number, url: string): Promise<void> {
+  if (!xBodySupported() || !isXBodyPageUrl(url)) return;
+  const settings = await loadSettings();
+  if (!settings.translateXBody) return;
+  const allowed = await browser.permissions
+    .contains({ origins: xBodyPermissionOrigins() })
+    .catch(() => false);
+  if (
+    !shouldAutoInjectXBody({
+      settingOn: settings.translateXBody,
+      url,
+      originAllowed: allowed,
+      supported: xBodySupported(),
+    })
+  ) {
+    return;
+  }
+  await ensureContentScript(tabId);
+}
+
+/** Injects already-open x.com tabs after the setting is turned on or the origin is granted. */
+export async function injectXBodyPages(): Promise<void> {
+  if (!xBodySupported()) return;
+  const settings = await loadSettings();
+  if (!settings.translateXBody) return;
+  const tabs = await browser.tabs.query({}).catch(() => []);
+  for (const tab of tabs) {
+    if (tab.id === undefined || !tab.url) continue;
+    void injectIfXBody(tab.id, tab.url);
+  }
 }
 
 /** Re-injects open Outlook tabs after the banner setting is turned back on. */
