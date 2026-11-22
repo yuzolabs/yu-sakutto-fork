@@ -88,28 +88,6 @@ runs:
         pnpm zip:firefox
         node scripts/compare-extension-builds.ts /tmp/firefox-mv3-first .output/firefox-mv3
 
-    - if: ${{ inputs.target == 'firefox' }}
-      shell: bash
-      run: |
-        set -euo pipefail
-        pnpm source:firefox
-        rm -rf /tmp/sakutto-firefox-src
-        mkdir -p /tmp/sakutto-firefox-src
-        python3 - <<'PY'
-        from pathlib import Path
-        import zipfile
-        zipfile.ZipFile('.output/sakutto-firefox-sources.zip').extractall('/tmp/sakutto-firefox-src')
-        PY
-        mkdir -p /tmp/sakutto-firefox-src/vendor/wllama /tmp/sakutto-firefox-src/public/vendor
-        cp -a vendor/wllama/dist /tmp/sakutto-firefox-src/vendor/wllama/dist
-        cp -a public/vendor/wllama /tmp/sakutto-firefox-src/public/vendor/wllama
-        (
-          cd /tmp/sakutto-firefox-src
-          pnpm install --frozen-lockfile
-          pnpm zip:firefox
-        )
-        node scripts/compare-extension-builds.ts .output/firefox-mv3 /tmp/sakutto-firefox-src/.output/firefox-mv3
-
     - shell: bash
       run: node scripts/package-artifact.ts
 

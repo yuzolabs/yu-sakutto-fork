@@ -65,7 +65,7 @@ pnpm build:firefox  # Firefox 153+ in .output/firefox-mv3
 | `pnpm build`         | Production Chrome extension, after a verified wllama build |
 | `pnpm build:firefox` | Firefox MV3 in `.output/firefox-mv3`                       |
 
-You do not need `pnpm bench`, `pnpm release`, or a Chrome Web Store upload for a normal contribution.
+You do not need `pnpm bench` or `pnpm release` for a normal contribution.
 
 ## Branch and commits
 

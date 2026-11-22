@@ -14,7 +14,7 @@ The maintainer will acknowledge the report and discuss next steps in that privat
 
 ## Supported versions
 
-Please report against the latest Chrome Web Store release, or against current `main` if the issue is in this repository.
+Please report against current `main` of this repository.
 
 # セキュリティポリシー
 
@@ -32,4 +32,4 @@ https://github.com/yuzolabs/yu-sakutto-fork/security/advisories/new
 
 ## 対象バージョン
 
-Chrome ウェブストアの最新版、またはこのリポジトリの現在の `main` を対象にしてください。
+このリポジトリの現在の `main` を対象にしてください。

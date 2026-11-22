@@ -4,11 +4,6 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish the uploaded package on the Chrome Web Store
-        type: boolean
-        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -126,45 +121,3 @@ jobs:
           body_path: release-notes.md
           files: dist-zip/*.zip
           fail_on_unmatched_files: true
-
-  store:
-    name: Chrome Web Store
-    needs: package
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: chrome-mv3-zip
-          path: store-zip
-
-      - name: Collect the store zip
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t zips < <(find store-zip -type f -name '*.zip' | sort)
-          if [ "${#zips[@]}" -ne 1 ]; then
-            echo "expected one store zip, found ${#zips[@]}" >&2
-            exit 1
-          fi
-          mkdir -p dist-zip
-          cp -- "${zips[0]}" dist-zip/
-
-      - name: Upload the package
-        env:
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && 'true' || 'false' }}
-        run: node scripts/chrome-web-store.ts dist-zip

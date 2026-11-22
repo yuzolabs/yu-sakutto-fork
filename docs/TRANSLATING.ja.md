@@ -65,7 +65,7 @@ English: [TRANSLATING.md](TRANSLATING.md)
 
 `placeholders` があるキーは、英語の `placeholders` をそのまま複製してください。自分で足したり削ったりしないでください。
 
-**ブランド名と製品名を変えない。** `extensionName` はどのカタログでも `Sakutto` で始まり、75 文字以内に収まります。ストアのタイトルに上限があるためです。`extensionShortName` はどのカタログでも `Sakutto` です。`PLaMo`、`PFN`、`Preferred Networks`、`Chrome`、`WebGPU`、`MIT`、`NOTICE`、`CSV` はそのまま書きます。
+**ブランド名と製品名を変えない。** `extensionName` はどのカタログでも `Sakutto` で始まり、75 文字以内に収まります。拡張機能名は、表示される場所に文字数の上限があるためです。`extensionShortName` はどのカタログでも `Sakutto` です。`PLaMo`、`PFN`、`Preferred Networks`、`Chrome`、`WebGPU`、`MIT`、`NOTICE`、`CSV` はそのまま書きます。
 
 **事実を変えない。** ライセンスに同意する前に読者が知る必要のある事実が 3 つあります。
 

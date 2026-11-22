@@ -3,10 +3,6 @@
   <h1>Sakutto</h1>
   <p><strong>ページも、PDF も、動画も、入力中の文も。端末の中で、PLaMo で翻訳。</strong></p>
   <p>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/v/mhlbjjijfkoghmcjndgdimhdlfkhadfl?logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store" alt="Chrome ウェブストア"></a>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/users/mhlbjjijfkoghmcjndgdimhdlfkhadfl" alt="Chrome ウェブストア ユーザー数"></a>
-    <a href="https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl"><img src="https://img.shields.io/chrome-web-store/rating/mhlbjjijfkoghmcjndgdimhdlfkhadfl" alt="Chrome ウェブストア 評価"></a>
-    <a href="https://addons.mozilla.org/ja/firefox/addon/sakutto-local-ai-translation/"><img src="https://img.shields.io/amo/v/sakutto-local-ai-translation?logo=firefoxbrowser&logoColor=white&label=Firefox%20Add-ons" alt="Firefox Add-ons"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="ライセンス: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="最新リリース"></a>
     <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
@@ -125,18 +121,20 @@ PLaMo が対応する 53 言語では、訳文はすべて PLaMo が生成しま
 
 ## インストール
 
-Sakutto は両方のストアで公開しています。
+このフォークはどのブラウザのストアにも公開していません。オリジナルの Sakutto（[jammaru/sakutto](https://github.com/jammaru/sakutto)）は、上流の掲載からインストールできます。
 
 - **Chrome ウェブストア** — [Sakutto - ローカルAI翻訳](https://chrome.google.com/webstore/detail/mhlbjjijfkoghmcjndgdimhdlfkhadfl)（Chrome 116 以降）。
 - **Firefox Add-ons** — [Sakutto - ローカルAI翻訳](https://addons.mozilla.org/ja/firefox/addon/sakutto-local-ai-translation/)（Firefox 153 以降）。
 
+このフォークのビルドを使うには、[docs/BUILDING.md](docs/BUILDING.md) に従ってソースからビルドします（例: `pnpm build`）。できた拡張機能は展開して読み込みます。
+
 **3 ステップで使い始められます。**
 
-1. お使いのブラウザのストアからインストールし、Sakutto をツールバーにピン留めします。
+1. オリジナルの Sakutto をお使いのブラウザのストアから入れるか、このフォークをソースからビルドして展開したパッケージを読み込み、Sakutto をツールバーにピン留めします。
 2. ポップアップで **このページを翻訳** を選ぶか、Alt+A（Mac では Option+A）を押します。
 3. PLaMo のライセンスに同意し、初回だけのモデルのダウンロードが終わるまで待ちます。そのあとは端末内で翻訳され、オフラインでも使えます。
 
-アカウントは不要です。モデルの重みは、このリポジトリにもストアのパッケージにも含まれません。
+アカウントは不要です。モデルの重みは、このリポジトリにも拡張機能のパッケージにも含まれません。
 
 ## ショートカット
 
@@ -238,8 +236,8 @@ pnpm format:check
 pnpm typecheck
 pnpm test
 pnpm test:e2e       # ローカルのページで確認します。モデルはダウンロードしません
-pnpm zip            # Chrome ウェブストア用の zip は .output
-pnpm zip:firefox    # Firefox 用 zip。AMO のソース zip は pnpm source:firefox
+pnpm zip            # Chrome 用の zip は .output
+pnpm zip:firefox    # Firefox 用 zip
 ```
 
 `pnpm build` は、ピン留めした `pdfjs-dist` のビルドを先にパッケージへコピーします（`pnpm pdfjs` はその工程だけを実行します）。リーダーは同梱したファイルから pdf.js を読みます。pdf.js は worker、CMap、標準フォントの代替を自分からの相対位置で解決するためです。

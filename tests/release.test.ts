@@ -31,7 +31,6 @@ import {
   versionFromTag,
 } from '../scripts/release/plan.ts';
 import { checkRelease, releaseVersion } from '../scripts/release/run.ts';
-import { STORE_SECRET_NAMES } from '../scripts/chrome-web-store.ts';
 
 const repo = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -346,7 +345,7 @@ describe('release command', () => {
 });
 
 describe('release workflow', () => {
-  it('reuses the package action and publishes to the store only from the workflow input', () => {
+  it('reuses the package action and keeps the GitHub Release a draft', () => {
     const workflow = normalizeEol(
       readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'),
     );
@@ -355,7 +354,6 @@ describe('release workflow', () => {
     );
     expect(workflow).toContain("tags: ['v*']");
     expect(workflow).toContain('workflow_dispatch:');
-    expect(workflow).toContain('publish:');
     expect(workflow).toContain('uses: ./.github/actions/package-extension');
     expect(workflow).toContain('from-source: true');
     expect(workflow).toContain('fetch-depth: 0');
@@ -364,20 +362,15 @@ describe('release workflow', () => {
     expect(workflow).toContain('node scripts/release/cli.ts notes > release-notes.md');
     expect(workflow).toContain('draft: true');
     expect(workflow).toContain('chrome-mv3-zip');
+    expect(workflow).toContain('files: dist-zip/*.zip');
     expect(workflow).toContain('pnpm lint');
     expect(workflow).toContain('pnpm format:check');
     expect(workflow).toContain('pnpm typecheck');
     expect(workflow).toContain('pnpm test');
     expect(workflow).toContain('pnpm test:e2e');
-    expect(workflow).toContain('node scripts/chrome-web-store.ts dist-zip');
-    expect(workflow).toContain('files: dist-zip/*.zip');
-    expect(workflow).toContain(
-      "CWS_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && 'true' || 'false' }}",
-    );
-    for (const name of STORE_SECRET_NAMES) {
-      expect(workflow).toContain(`secrets.${name}`);
-    }
     expect(workflow).not.toContain('pull_request:');
+    expect(workflow).not.toContain('chrome-web-store');
+    expect(workflow).not.toContain('CWS_');
     expect(workflow).not.toMatch(/GOCSPX|ya29\.|refresh_token=/);
     expect(workflow).not.toMatch(/run:.*\$\{\{\s*secrets\./);
     expect(ci).not.toContain('pnpm release');
@@ -398,15 +391,11 @@ describe('release workflow', () => {
     );
     expect(japanese).toContain('pnpm release patch');
     expect(japanese).toContain('git push origin main vX.Y.Z');
-    expect(japanese).toContain('CWS_REFRESH_TOKEN');
-    expect(japanese).toContain('CWS_PUBLISHER_ID');
     expect(japanese).toContain('OPFS');
     expect(japanese).toContain('です。');
     expect(japanese).not.toMatch(/GOCSPX|ya29\./);
     expect(english).toContain('git push origin main vX.Y.Z');
-    expect(english).toContain('CWS_CLIENT_SECRET');
     expect(english).toContain('OPFS');
-    expect(english).toContain('does not publish');
   });
 });
 

@@ -65,7 +65,7 @@ pnpm build:firefox  # Firefox 153 以降。成果物は .output/firefox-mv3
 | `pnpm build`         | 検証済み wllama のあとの Chrome 向け本番ビルド        |
 | `pnpm build:firefox` | Firefox MV3。成果物は `.output/firefox-mv3`           |
 
-通常の貢献に `pnpm bench`、`pnpm release`、Chrome ウェブストアへのアップロードは不要です。
+通常の貢献に `pnpm bench` と `pnpm release` は不要です。
 
 ## ブランチとコミット
 

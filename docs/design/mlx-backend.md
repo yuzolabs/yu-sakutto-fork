@@ -47,7 +47,7 @@ Sakutto's CSP) and WebGPU. They cannot:
 - ship a notarized helper inside the `.crx` / `.xpi` that the browser will launch
 - talk to Metal except through WebGPU (Dawn) or a native process
 
-So "add MLX as a backend" for a store-distributed extension means **a process the user
+So "add MLX as a backend" for a packaged extension means **a process the user
 already runs**, reached from the extension.
 
 ## Integration paths
@@ -86,7 +86,7 @@ off this machine" confirmation and still only talks to the origin the user typed
 host permission is requested at enable-time, not at install. The developer never sees the
 text.
 
-**CWS / AMO:** optional host permissions for `http://localhost/*` /
+Optional host permissions for `http://localhost/*` /
 `http://127.0.0.1/*` (and a user-typed origin) are the documented MV3 pattern
 ([Declare permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions),
 [Match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns)).
@@ -117,15 +117,14 @@ sampling, stop handling, permission UX, and docs.
 
 [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
 and [Firefox native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging)
-can start a local binary over stdio. The store package still cannot contain that binary:
+can start a local binary over stdio. The extension package still cannot contain that binary:
 the user (or a `.pkg`) must register a host manifest under
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` (and a separate
 Firefox path with `allowed_extensions` instead of `allowed_origins`).
 
 Costs:
 
-- A shipped `nativeMessaging` permission, extra CWS/AMO review surface, and two host
-  manifests (Chrome vs Firefox).
+- A shipped `nativeMessaging` permission and two host manifests (Chrome vs Firefox).
 - Notarization / Gatekeeper for a Mac helper that embeds Python or links MLX.
 - Update trains for mlx-lm, Metal, and the helper, decoupled from the extension version.
 - No help for Windows/Linux users who wanted LM Studio anyway.

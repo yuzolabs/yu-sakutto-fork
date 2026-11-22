@@ -79,7 +79,7 @@ Copy the `placeholders` block from English verbatim for a message that has one. 
 placeholder of your own, and do not drop one.
 
 **Keep the brand and the product names.** `extensionName` starts with `Sakutto` in every catalog
-and stays inside 75 characters, because the store title has a hard limit. `extensionShortName` is
+and stays inside 75 characters, because extension names have a hard length limit in the places they are shown. `extensionShortName` is
 `Sakutto` in every catalog. `PLaMo`, `PFN`, `Preferred Networks`, `Chrome`, `WebGPU`, `MIT`,
 `NOTICE` and `CSV` stay as written.
 

@@ -1,10 +1,9 @@
 # Firefox manual test checklist
 
 Owner-only. First target: **Windows Firefox 153 or later** (ESR 153 included), on a PC with a GPU.
-This is not a substitute for `pnpm test` or `web-ext lint`. Do not paste Chrome Web Store numbers
-into the listing until this list has measurements from this machine.
+This is not a substitute for `pnpm test` or `web-ext lint`.
 
-End users install the release from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/sakutto-local-ai-translation/). Loading an unpacked build from `about:debugging` is for manual testing and local development.
+End users install the original Sakutto from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/sakutto-local-ai-translation/). This fork is not published there; use an unpacked build only. Loading an unpacked build from `about:debugging` is for manual testing and local development.
 
 Load the unpacked build from `about:debugging` (This Firefox → Load Temporary Add-on →
 `.output/firefox-mv3/manifest.json`). `web-ext lint` on that directory must report 0 errors.
@@ -38,7 +37,7 @@ From `about:support` and the options page diagnostics:
 4. On a machine where WebGPU is blocked, confirm the add-on falls back to CPU without throwing.
 
 Write results as "about N times faster/slower", seconds, and the conditions. Do not reuse Chrome
-listing numbers.
+measurements as Firefox results.
 
 ## Event page
 
@@ -91,7 +90,7 @@ English page (4 paragraphs + heading). Output identical in the three Firefox pat
 | Firefox WebGPU, kick off (previous default) | 8.4–9.0 s |         ~1.1 s | ~11.6 tok/s                                                     |
 | Firefox CPU, 1 thread                       |    15.8 s |          2.7 s | No COOP/COEP in extension pages, so CPU cannot use wasm threads |
 | Firefox WebGPU, kick on (now default)       | 1.6–1.9 s |    0.55–0.83 s | ~5× full page vs kick off                                       |
-| Chrome WebGPU (same PC, same page)          |   ~0.86 s |              — | Reference only; do not paste into the AMO listing               |
+| Chrome WebGPU (same PC, same page)          |   ~0.86 s |              — | Reference only                                                  |
 
 ### How to reproduce
 
@@ -123,7 +122,7 @@ comparisons; do not mix those JSONL rows with this Firefox table.
 
 ## 日本語
 
-所有者向けの手動確認です。エンドユーザーは [Firefox Add-ons](https://addons.mozilla.org/ja/firefox/addon/sakutto-local-ai-translation/) からインストールできます。`about:debugging` からの一時読み込みは、手動確認とローカル開発用です。Windows の Firefox 153 以降、GPU 付きの PC で
+所有者向けの手動確認です。エンドユーザーはオリジナルの Sakutto を [Firefox Add-ons](https://addons.mozilla.org/ja/firefox/addon/sakutto-local-ai-translation/) からインストールできます。このフォークはそこに公開していないので、使うときは展開したビルドだけです。`about:debugging` からの一時読み込みは、手動確認とローカル開発用です。Windows の Firefox 153 以降、GPU 付きの PC で
 `about:debugging` から `.output/firefox-mv3` を一時読み込みします。GPU / CPU、ショートカット、
 イベントページの寿命、計測値を記録してください。空 submit による WebGPU 待ちの短縮は既定オンです
 （2026-11-09、Windows Firefox 159 / RTX 4070 Ti SUPER で約 5 倍）。
