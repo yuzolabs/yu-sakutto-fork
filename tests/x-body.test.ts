@@ -81,6 +81,7 @@ describe('X text roots', () => {
       '新しい記事を書きました。',
       'How small models translate on a laptop A short look at running a translation model locally.',
       '投票とリンクです。',
+      'Shipping today. Thanks to all testers. #release',
     ]);
   });
 
@@ -404,10 +405,9 @@ describe('X post translation on the synthetic timeline', () => {
     }
   }
 
-  it('unlocks Grok translations and translates only foreign X text', async () => {
-    load('x-body.html');
+  function xSession(translator: PageEngine): PageSession {
     const session = new PageSession(document, {
-      engine,
+      engine: translator,
       labels: {
         original: '原文',
         chromeNote: '',
@@ -438,6 +438,12 @@ describe('X post translation on the synthetic timeline', () => {
       scope: xBodyScope(),
     });
     sessions.push(session);
+    return session;
+  }
+
+  it('unlocks Grok translations and translates only foreign X text', async () => {
+    load('x-body.html');
+    const session = xSession(engine);
     await session.translate();
     // The content script wires the two together the same way: a press asks for a rescan.
     const { unlocker: created } = unlocker({ onUnlock: () => session.rescan() });
@@ -453,6 +459,8 @@ describe('X post translation on the synthetic timeline', () => {
         'Readers noted that the quoted figure leaves out the second survey.',
         'How small models translate on a laptop',
         'A short look at running a translation model locally.',
+        // The multi-line post reaches the model with its lines, not as one line.
+        'Shipping today.\n\nThanks to all testers.\n#release',
       ].sort(),
     );
     expect(text('#post-japanese [data-testid="tweetText"]')).toBe(
@@ -468,5 +476,39 @@ describe('X post translation on the synthetic timeline', () => {
     expect(text('#post-grok [data-testid="User-Name"] a span')).toBe('Alpha Writer');
     expect(document.documentElement.lang).toBe('ja');
     expect(session.state().scope).toBe('x-body');
+  });
+
+  it('keeps the lines of a multi-line post when the model joins them into one', async () => {
+    load('x-body.html');
+    const span = document.querySelector('#post-multiline [data-testid="tweetText"] span');
+    if (!span) throw new Error('missing multi-line post');
+    const before = span.parentElement?.innerHTML;
+    expect(span.textContent).toBe('Shipping today.\n\nThanks to all testers.\n');
+
+    const joining: PageEngine = {
+      async *translate(segments) {
+        for (const segment of segments) {
+          const final = segment.text.includes('Shipping today.')
+            ? segment.text.replace(
+                'Shipping today.\n\nThanks to all testers.\n',
+                '本日リリースします。テスターの皆さんに感謝します。',
+              )
+            : `[ja] ${segment.text.replace(/\n+/gu, ' ')}`;
+          yield { id: segment.id, final, engine: 'plamo' as const };
+        }
+      },
+    };
+    const session = xSession(joining);
+    await session.translate();
+    await settle(session);
+
+    // X paints these newlines through white-space; no `<br>` is added to the post.
+    expect(span.textContent).toBe('本日リリースします。\n\nテスターの皆さんに感謝します。\n');
+    expect(span.parentElement?.querySelector('br')).toBeNull();
+    expect(span.nextElementSibling?.textContent).toBe('#release');
+
+    session.restore();
+    expect(span.textContent).toBe('Shipping today.\n\nThanks to all testers.\n');
+    expect(span.parentElement?.innerHTML).toBe(before);
   });
 });

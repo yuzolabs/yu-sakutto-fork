@@ -306,6 +306,29 @@
             </div>
           </article>
         </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-multiline">
+            <div data-testid="User-Name">
+              <a href="/fixture_lambda" role="link"><span>Lambda Writer</span></a>
+              <a href="/fixture_lambda/status/1008" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">10h</time></a
+              >
+            </div>
+            <div>
+              <!--
+                A multi-line post. X keeps its newlines as literal characters in the text node
+                and paints them through white-space, with no <br>. `&#10;` is that newline
+                character, written so the fixture's own indentation stays out of the text.
+              -->
+              <div dir="auto" lang="en" data-testid="tweetText">
+                <span style="white-space: break-spaces"
+                  >Shipping today.&#10;&#10;Thanks to all testers.&#10;</span
+                ><a href="/hashtag/release" dir="ltr" role="link">#release</a>
+              </div>
+            </div>
+          </article>
+        </div>
       </div>
     </main>
     <aside data-testid="sidebarColumn">
