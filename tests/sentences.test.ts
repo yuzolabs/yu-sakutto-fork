@@ -131,6 +131,57 @@ describe('sentence splitting', () => {
   });
 });
 
+/**
+ * X renders the text of a long post as a run of adjacent spans, so the segment text is
+ * tiled placeholder pairs with no depth-zero text between them, and one span can hold
+ * several paragraphs. A "Show more" expansion of such a post used to come back as one
+ * unsplittable segment that was then painted as its own source text.
+ */
+function tiledPost(): string {
+  const paragraph = (label: string): string =>
+    `${label} holds several sentences with periods inside the span itself. `.repeat(4);
+  const head = paragraph('The opening paragraph');
+  const body = Array.from({ length: 14 }, (_, i) => paragraph(`Body paragraph ${i + 1}`)).join('');
+  const tail = paragraph('The closing paragraph');
+  return `<i1>${head}</i1><i2>${body}</i2><i3>${tail}</i3><i4>end</i4>`;
+}
+
+describe('splitting span-tiled text', () => {
+  it('splits a tiled long post into prompt-sized pieces', () => {
+    const text = tiledPost();
+    expect(text.length).toBeGreaterThan(4000);
+    const pieces = chunkForTranslation(text);
+    expect(pieces.length).toBeGreaterThan(5);
+    expect(pieces.every((piece) => piece.length <= 600)).toBe(true);
+  });
+
+  it('still splits when the recovery splitter asks for tiny pieces', () => {
+    const pieces = splitForTranslation(tiledPost(), { sentenceThreshold: 80, maxChunkChars: 160 });
+    expect(pieces.length).toBeGreaterThan(5);
+    expect(pieces.every((piece) => piece.length <= 160)).toBe(true);
+  });
+
+  it('splits a tiled Japanese post without spaces or terminators', () => {
+    const body = 'この段落はスパンの中に複数の文を含みます'.repeat(150);
+    const pieces = chunkForTranslation(`<i1>${body}</i1><i2>終わり</i2>`);
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(pieces.every((piece) => piece.length <= 600)).toBe(true);
+  });
+
+  it('keeps placeholder pairs intact when depth-zero space exists', () => {
+    const text =
+      'First sentence sits outside any span. '.repeat(6) +
+      '<i1>A short labeled span stays whole.</i1> ' +
+      'Second block of sentences also sits outside. '.repeat(6);
+    const pieces = chunkForTranslation(text, 200);
+    for (const piece of pieces) {
+      const opens = piece.match(/<i1>/g)?.length ?? 0;
+      const closes = piece.match(/<\/i1>/g)?.length ?? 0;
+      expect(opens).toBe(closes);
+    }
+  });
+});
+
 describe('sentence terminators', () => {
   it('detects a finished caption line, ignoring trailing closers', () => {
     expect(hasSentenceTerminator('The train left.')).toBe(true);
