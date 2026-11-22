@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { uiShadow } from '@/dom/overlay';
 import {
+  MAX_REBUILT_REPAINTS,
   PageSession,
   type PageEngine,
   type SessionPreferences,
@@ -340,5 +341,140 @@ describe('page bar for a caller that owns the restore control', () => {
     session.setLabels({ ...labels, barDone: '表示中のX本文を翻訳しました。', barOriginal: '停止' });
     expect(barText()).toBe('表示中のX本文を翻訳しました。');
     expect(barButtons()[0]?.textContent).toBe('停止');
+  });
+});
+
+describe('blocks a page rebuilds with its own text', () => {
+  /** What a framework does when it re-renders a leaf whose text differs: a new node. */
+  function rebuildLeaf(text: string): void {
+    const leaf = document.querySelector('[data-scope] span');
+    const fresh = document.createElement('span');
+    fresh.textContent = text;
+    leaf?.replaceWith(fresh);
+  }
+
+  it('paints the finished translation again into the rebuilt nodes', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>This paragraph is written in English.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      '訳:This paragraph is written in English.',
+    );
+    const sent = translated.length;
+
+    rebuildLeaf('This paragraph is written in English.');
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      '訳:This paragraph is written in English.',
+    );
+    // The same translation was reused; nothing went to the engine again.
+    expect(translated.length).toBe(sent);
+
+    // Restore still puts the page's own text back.
+    session.restore();
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      'This paragraph is written in English.',
+    );
+  });
+
+  it('stops answering a page that rebuilds every paint', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>This paragraph is written in English.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+
+    for (let round = 0; round < MAX_REBUILT_REPAINTS; round += 1) {
+      rebuildLeaf('This paragraph is written in English.');
+      await settle(session);
+      expect(document.querySelector('[data-scope]')?.textContent).toContain('訳:');
+    }
+    rebuildLeaf('This paragraph is written in English.');
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      'This paragraph is written in English.',
+    );
+  });
+
+  it('translates new text the page writes into a translated block', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>This paragraph is written in English.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+
+    rebuildLeaf('The page replaced this paragraph with new words.');
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      '訳:The page replaced this paragraph with new words.',
+    );
+  });
+});
+
+describe('blocks the page adds to after they were translated', () => {
+  it('translates the page text again, not the old translation, when a post is expanded', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>The first part of a long post.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      '訳:The first part of a long post.',
+    );
+
+    // "Show more": the page keeps the first node and appends the rest of the post.
+    const rest = document.createElement('span');
+    rest.textContent = ' The rest of the post appears after expanding.';
+    document.querySelector('[data-scope]')?.append(rest);
+    await settle(session);
+
+    expect(sentText().at(-1)).toBe(
+      'The first part of a long post. The rest of the post appears after expanding.',
+    );
+    expect(sentText().some((text) => text.includes('訳:'))).toBe(false);
+    session.restore();
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      'The first part of a long post. The rest of the post appears after expanding.',
+    );
+  });
+
+  it('keeps the translation without a new request when the page adds no text', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>This paragraph is written in English.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+    const sent = translated.length;
+
+    document.querySelector('[data-scope]')?.append(document.createElement('img'));
+    await settle(session);
+    expect(document.querySelector('[data-scope]')?.textContent).toBe(
+      '訳:This paragraph is written in English.',
+    );
+    expect(translated.length).toBe(sent);
+  });
+
+  it('keeps a value the page wrote itself into a translated node', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML =
+      '<div data-scope lang="en"><span>Old text written in English.</span></div>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+
+    const text = document.querySelector('[data-scope] span')?.firstChild;
+    if (text) text.nodeValue = 'New text the page wrote in English.';
+    await settle(session);
+    expect(sentText().at(-1)).toBe('New text the page wrote in English.');
+    expect(document.querySelector('[data-scope]')?.textContent).toContain(
+      'New text the page wrote in English.',
+    );
   });
 });

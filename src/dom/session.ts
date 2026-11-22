@@ -112,6 +112,13 @@ const MAX_SELECTION_SCAN_NODES = 512;
 export const PAGE_SHORTCUT_DEDUP_MS = 200;
 
 /**
+ * How many times one block is painted again after the page rebuilt it with its source text.
+ * A framework that re-renders a few times while it settles is covered; a page that answers
+ * every paint with a rebuild of its own is left showing its text instead of fighting it.
+ */
+export const MAX_REBUILT_REPAINTS = 5;
+
+/**
  * True when the reader is typing in a field, where an unassigned Option+letter must type
  * rather than run a page command. Chrome-assigned commands still arrive through onCommand.
  */
@@ -233,6 +240,8 @@ interface Live {
   partError: boolean[];
   rect: DOMRect | null;
   batchToken: number;
+  /** Times the page rebuilt this block with its source text and the translation was put back. */
+  rebuilds: number;
   /** The scope root a scoped block was found in; language detection stays inside it. */
   scopeRoot?: Element;
   /** Selection only: normalized source, its model input, and the break map. */
@@ -1317,6 +1326,7 @@ export class PageSession {
       partError: [],
       rect: null,
       batchToken: 0,
+      rebuilds: 0,
       ...(scopeRoot ? { scopeRoot } : {}),
     };
 
@@ -1360,6 +1370,7 @@ export class PageSession {
       partError: [],
       rect,
       batchToken: 0,
+      rebuilds: 0,
     };
   }
 
@@ -2470,13 +2481,83 @@ export class PageSession {
 
   private refreshBlock(block: Element): void {
     const existing = this.liveByBlock.get(block);
-    if (!existing || existing.state === 'running') return;
+    if (!existing) return;
+    if (existing.state === 'running') {
+      // The translation is still streaming into this block. Only a rebuild that kept the
+      // same text needs the new nodes; any other change is looked at once it finishes.
+      if (!this.wasRebuilt(existing, block)) return;
+      this.dropCreated(existing);
+      const model = buildSegment(block);
+      if (model && model.source === existing.source) this.adoptModel(existing, model);
+      return;
+    }
+    // Put back what this session wrote into nodes the page kept, so the block reads as the
+    // page's own text. Otherwise a page that adds to a translated block (X's "Show more"
+    // appends the rest of a post) would send the old translation in as new source text.
+    this.unpaint(existing, block);
     const model = buildSegment(block);
-    if (model && model.source === existing.source) return;
+    if (model && model.source === existing.source) {
+      // The page's text did not change: the translation still applies.
+      this.adoptModel(existing, model);
+      return;
+    }
     const index = existing.index;
     const scopeRoot = existing.scopeRoot;
     this.forgetLive(existing, false);
     this.addBlock(block, index, scopeRoot);
+  }
+
+  /**
+   * Takes over the block's current text nodes and paints a translation that still applies
+   * into them. A framework can rebuild a translated block with its own source text when it
+   * re-renders; X's Article reader (a Draft.js view) does this while it settles after
+   * loading, which left translated paragraphs showing the source again. No request goes to
+   * the engine for it.
+   */
+  private adoptModel(item: Live, model: SegmentModel): void {
+    item.model = model;
+    item.originalChildren = [...model.block.childNodes];
+    // A queued block paints the new nodes when its turn comes.
+    if (item.state !== 'done' && item.state !== 'running') return;
+    if (item.rebuilds >= MAX_REBUILT_REPAINTS) return;
+    item.rebuilds += 1;
+    this.paint(item, item.state !== 'done');
+  }
+
+  /** True when the page replaced text nodes of the block's last model with nodes of its own. */
+  private wasRebuilt(item: Live, block: Element): boolean {
+    const previous = item.model;
+    if (!previous) return false;
+    return allSlots(previous).some((slot) => !block.contains(slot.node));
+  }
+
+  /** Removes text nodes this session added for its last paint of the block. */
+  private dropCreated(item: Live): void {
+    const stale = item.created.splice(0);
+    if (stale.length === 0) return;
+    this.editDom(() => {
+      for (const node of stale) node.remove();
+    });
+  }
+
+  /**
+   * Undoes this session's last paint of a block without touching what the page changed:
+   * a text node still holding the value this session wrote gets its source text back, and
+   * the nodes and the bilingual line this session added are removed.
+   */
+  private unpaint(item: Live, block: Element): void {
+    this.dropCreated(item);
+    const model = item.model;
+    this.editDom(() => {
+      removeTranslationUi(block);
+      if (!model) return;
+      for (const slot of allSlots(model)) {
+        const node = slot.node;
+        if (!block.contains(node)) continue;
+        if (this.expected.get(node) !== (node.nodeValue ?? '')) continue;
+        if (node.nodeValue !== slot.original) node.nodeValue = slot.original;
+      }
+    });
   }
 
   private forgetDisconnected(): void {
