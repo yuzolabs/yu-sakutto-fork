@@ -90,6 +90,13 @@ For PLaMo's 53 languages, every translated line comes from PLaMo. On Chrome, Chr
     </td>
   </tr>
   <tr>
+    <td colspan="2" valign="top">
+      <h3>X post translation</h3>
+      <p>On <code>x.com</code> (Chrome only), Sakutto automatically translates post text (including replies, quoted posts, and "Show more" text), Community Notes, X Articles, and article previews when their language differs from your target, leaving display names, trends, X's interface, polls, other link cards, and image alt text untouched. It is off until you enable it in Settings, which requests access to <code>https://x.com/*</code> only.</p>
+      <p>When X displays a Grok translation instead of the original text, Sakutto clicks X's own "Show original" control once per item near the screen (when X's interface is in Japanese or English) and translates the original with PLaMo, without calling X APIs or changing account settings. You can stop it for the current tab from the popup or the page bar, and resume it from the popup; a reload starts it again.</p>
+    </td>
+  </tr>
+  <tr>
     <td width="54%" valign="top">
       <h3>Your glossary</h3>
       <p>Keep a global glossary and per-site glossaries so names, product terms, and technical vocabulary come back the way you write them. Each stored list holds up to 5,000 terms, and a translate run can merge up to 10,000.</p>
@@ -212,7 +219,7 @@ The model file is not bundled. You can remove it and clear the translation cache
 | `scripting`        | Injects the content script into the active tab after you ask for a translation.      |
 | `contextMenus`     | Adds Translate page, Translate selection, and Translate PDF to the right-click menu. |
 
-The release package asks for no install-time host permissions. Optional host permissions (`https://*/*` and `http://*/*`) are requested only when you turn on automatic translation for a site, enable video captions, add a custom caption site, or enable the Gmail/Outlook mail banner. Nothing is granted for every site at install time. The PDF reader adds no permission: it reads the file from the origin the `activeTab` grant already covers. Access to a local server is also optional.
+The release package asks for no install-time host permissions. Optional host permissions (`https://*/*` and `http://*/*`) are requested only when you turn on automatic translation for a site, enable video captions, add a custom caption site, enable the Gmail/Outlook mail banner, or enable X post translation (which requests `https://x.com/*` only). Nothing is granted for every site at install time. The PDF reader adds no permission: it reads the file from the origin the `activeTab` grant already covers. Access to a local server is also optional.
 
 ## Development
 
