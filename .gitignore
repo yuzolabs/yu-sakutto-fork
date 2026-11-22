@@ -8,6 +8,7 @@ launch-video/
 *.mkv
 .repro/
 .output/
+var/
 artifacts/
 .wxt/
 dist/
