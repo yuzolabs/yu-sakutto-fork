@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "未获准访问 YouTube 和 X。"
   },
+  "xBodySetting": {
+    "message": "X 帖子翻译"
+  },
+  "xBodySettingHelp": {
+    "message": "自动翻译 x.com 上不是目标语言的帖子正文、社区笔记和文章。当 X 显示 Grok 翻译且 X 以英文或日文显示时，Sakutto 会在该标签页中对每个项目点按一次 X 的“Show original”，然后翻译原文。不会更改您的 X 账户设置。开启时，Chrome 会请求访问 x.com。"
+  },
+  "xBodyPermissionDenied": {
+    "message": "未获准访问 x.com，因此 X 帖子翻译保持关闭。"
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "显示原文行"
   },

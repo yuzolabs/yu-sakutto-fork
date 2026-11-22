@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "ไม่ได้รับสิทธิ์เข้าถึง YouTube และ X"
   },
+  "xBodySetting": {
+    "message": "การแปลโพสต์ X"
+  },
+  "xBodySettingHelp": {
+    "message": "แปลข้อความโพสต์ บันทึกชุมชน และบทความบน x.com ที่ไม่ใช่ภาษาเป้าหมายโดยอัตโนมัติ เมื่อ X แสดงคำแปลของ Grok และ X แสดงผลเป็นภาษาอังกฤษหรือภาษาญี่ปุ่น Sakutto จะกด “Show original” ของ X หนึ่งครั้งต่อรายการในแท็บนั้นแล้วแปลต้นฉบับ การตั้งค่าบัญชี X ของคุณจะไม่เปลี่ยนแปลง Chrome จะขอสิทธิ์เข้าถึง x.com ตอนเปิดการตั้งค่า"
+  },
+  "xBodyPermissionDenied": {
+    "message": "ไม่ได้รับสิทธิ์เข้าถึง x.com การแปลโพสต์ X จึงยังปิดอยู่"
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "แสดงบรรทัดต้นฉบับ"
   },

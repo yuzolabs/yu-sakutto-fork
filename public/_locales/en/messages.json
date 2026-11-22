@@ -1543,6 +1543,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "Access to YouTube and X was not granted."
   },
+  "xBodySetting": {
+    "message": "X post translation"
+  },
+  "xBodySettingHelp": {
+    "message": "Automatically translates post text, Community Notes, and Articles on x.com that are not in your target language. When X shows a Grok translation and X is displayed in English or Japanese, Sakutto presses X’s “Show original” once per item in that tab and translates the original. Your X account settings are not changed. Chrome asks for access to x.com when you turn this on."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Access to x.com was not granted, so X post translation stays off."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "Show original caption line"
   },

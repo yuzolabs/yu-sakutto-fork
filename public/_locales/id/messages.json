@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "Akses ke YouTube dan X tidak diberikan."
   },
+  "xBodySetting": {
+    "message": "Terjemahan postingan X"
+  },
+  "xBodySettingHelp": {
+    "message": "Menerjemahkan teks postingan, Catatan Komunitas, dan Artikel di x.com secara otomatis jika tidak dalam bahasa target Anda. Saat X menampilkan terjemahan Grok dan X ditampilkan dalam bahasa Inggris atau Jepang, Sakutto menekan “Show original” milik X satu kali per item di tab tersebut lalu menerjemahkan teks aslinya. Pengaturan akun X Anda tidak berubah. Chrome meminta akses ke x.com saat Anda mengaktifkan pengaturan ini."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Akses ke x.com tidak diberikan, jadi terjemahan postingan X tetap nonaktif."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "Tampilkan baris asli"
   },

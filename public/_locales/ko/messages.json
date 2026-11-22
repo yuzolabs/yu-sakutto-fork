@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "YouTube와 X에 대한 액세스가 허용되지 않았습니다."
   },
+  "xBodySetting": {
+    "message": "X 게시글 번역"
+  },
+  "xBodySettingHelp": {
+    "message": "x.com의 게시글 텍스트, 커뮤니티 노트, 기사 중 대상 언어가 아닌 것을 자동으로 번역합니다. X가 Grok 번역을 표시하고 X가 영어 또는 일본어로 표시될 때, Sakutto는 해당 탭에서 항목마다 한 번씩 X의 “Show original”을 누르고 원문을 번역합니다. X 계정 설정은 변경하지 않습니다. 켜면 Chrome이 x.com 접근 권한을 요청합니다."
+  },
+  "xBodyPermissionDenied": {
+    "message": "x.com 접근이 허용되지 않아 X 게시글 번역은 꺼진 상태로 유지됩니다."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "원문 줄 표시"
   },

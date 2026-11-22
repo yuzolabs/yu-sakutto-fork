@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "Der Zugriff auf YouTube und X wurde nicht gewährt."
   },
+  "xBodySetting": {
+    "message": "X-Post-Übersetzung"
+  },
+  "xBodySettingHelp": {
+    "message": "Übersetzt Post-Texte, Community Notes und Artikel auf x.com automatisch, wenn sie nicht in der Zielsprache sind. Wenn X eine Grok-Übersetzung zeigt und X auf Englisch oder Japanisch angezeigt wird, drückt Sakutto in diesem Tab pro Eintrag einmal auf „Show original“ von X und übersetzt das Original. Die Einstellungen des X-Kontos werden nicht geändert. Chrome fragt beim Einschalten nach Zugriff auf x.com."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Der Zugriff auf x.com wurde nicht erlaubt, daher bleibt die X-Post-Übersetzung ausgeschaltet."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "Originalzeile anzeigen"
   },

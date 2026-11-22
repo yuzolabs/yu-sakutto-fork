@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "O acesso ao YouTube e ao X não foi concedido."
   },
+  "xBodySetting": {
+    "message": "Tradução de posts do X"
+  },
+  "xBodySettingHelp": {
+    "message": "Traduz automaticamente o texto dos posts, as Notas da Comunidade e os Artigos do x.com que não estejam no seu idioma de destino. Quando o X mostra uma tradução do Grok e está em inglês ou japonês, o Sakutto aperta “Show original” do X uma vez por item naquela aba e traduz o original. As configurações da sua conta do X não são alteradas. O Chrome pede acesso ao x.com quando você ativa esta opção."
+  },
+  "xBodyPermissionDenied": {
+    "message": "O acesso ao x.com não foi concedido, então a tradução de posts do X continua desativada."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "Mostrar a linha original"
   },

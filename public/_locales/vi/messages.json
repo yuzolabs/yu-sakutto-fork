@@ -1539,6 +1539,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "Quyền truy cập YouTube và X không được cấp."
   },
+  "xBodySetting": {
+    "message": "Dịch bài đăng X"
+  },
+  "xBodySettingHelp": {
+    "message": "Tự động dịch văn bản bài đăng, Ghi chú cộng đồng và Bài viết trên x.com không thuộc ngôn ngữ đích của bạn. Khi X hiển thị bản dịch của Grok và X đang hiển thị bằng tiếng Anh hoặc tiếng Nhật, Sakutto nhấn “Show original” của X một lần cho mỗi mục trong tab đó rồi dịch bản gốc. Cài đặt tài khoản X của bạn không bị thay đổi. Chrome sẽ hỏi quyền truy cập x.com lúc bạn bật tùy chọn."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Không được cấp quyền truy cập x.com nên tính năng dịch bài đăng X vẫn tắt."
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "Hiện dòng gốc"
   },

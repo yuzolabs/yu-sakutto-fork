@@ -1543,6 +1543,15 @@
   "videoCaptionsPermissionDenied": {
     "message": "YouTube と X へのアクセスが許可されませんでした。"
   },
+  "xBodySetting": {
+    "message": "X本文翻訳"
+  },
+  "xBodySettingHelp": {
+    "message": "x.com のポスト本文・コミュニティノート・記事を、ターゲット言語でなければ自動で翻訳します。X の表示言語が日本語か英語のときは、Grok で翻訳して表示されている本文について、このタブで X の「原文を表示」を1件につき1回押して原文に戻してから訳します。X のアカウント設定は変えません。オンにすると x.com へのアクセス許可を求めます。"
+  },
+  "xBodyPermissionDenied": {
+    "message": "x.com へのアクセスが許可されなかったため、X本文翻訳はオフのままです。"
+  },
   "videoCaptionsShowOriginalSetting": {
     "message": "原文の行を表示する"
   },

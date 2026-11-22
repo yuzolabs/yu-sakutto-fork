@@ -218,7 +218,28 @@ describe('start controls while the model downloads', () => {
 });
 
 describe('X post translation surfaces', () => {
+  const settingsFields = source('ui/SettingsFields.svelte');
   const content = source('content/main.ts');
+
+  it('puts the switch on the settings page only, and never in the Firefox build', () => {
+    expect(settingsFields).toContain('data-sakutto="x-body"');
+    expect(settingsFields).toContain("t('xBodySetting')");
+    expect(settingsFields).toContain("t('xBodySettingHelp')");
+    expect(settingsFields).toContain("t('xBodyPermissionDenied')");
+    expect(settingsFields).toContain('const showXBody = xBodySupported();');
+    expect(settingsFields).toMatch(/\{#if showXBody\}[\s\S]*data-sakutto="x-body"/);
+    expect(popup).not.toContain('translateXBody');
+    expect(popup).not.toContain('xBodySetting');
+  });
+
+  it('calls permissions.request as the first await when the switch turns on', () => {
+    const start = settingsFields.indexOf('data-sakutto="x-body"');
+    const body = settingsFields.slice(start, settingsFields.indexOf('</label>', start));
+    const before = body.slice(0, body.indexOf('await resolveXBodyToggle(input.checked)'));
+    expect(before).toContain('xBodyDenied = false');
+    expect(before).not.toMatch(/\bawait\b/);
+    expect(body).toContain('onChange({ translateXBody: result.on })');
+  });
 
   it('words the popup page button and progress for X post translation on x.com', () => {
     expect(popup).toContain("let xBodyMode = $derived(view?.scope === 'x-body');");
