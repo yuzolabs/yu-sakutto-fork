@@ -136,6 +136,31 @@ export interface PageEngine {
   ): AsyncIterable<TranslationChunk>;
 }
 
+/**
+ * Limits a page translation to chosen parts of the page, such as the post text on a social
+ * site, instead of every block the walker finds.
+ *
+ * A scoped session reads the language of each block from the block and its own scope root
+ * only. The `<html lang>` of such a page names the site's interface language, not the
+ * language of the text inside the scope, so it must not mark a scoped block as already
+ * translated. For the same reason a scoped translation never rewrites `<html lang>`.
+ */
+export interface SessionScope {
+  /** Short name reported in the page state, so the popup can label the run. */
+  readonly name: string;
+  /**
+   * The elements to translate inside one document or open shadow root. Only the outermost
+   * root of a nested pair should be returned; blocks inside it are found by the walker.
+   */
+  roots(container: Document | ShadowRoot): Iterable<Element>;
+  /**
+   * True when a mutation on this node can add, remove, or change text inside a root: the node
+   * is inside a root, is one, or contains one. Mutations anywhere else are ignored, so a busy
+   * page does not rescan for every counter or timestamp it updates.
+   */
+  touches(node: Node): boolean;
+}
+
 export interface SessionPreferences {
   targetLanguage: string;
   targetExplicit: boolean;
@@ -174,6 +199,8 @@ export interface PageViewState {
   segmentsPerSecond: number | null;
   /** Visible prose the page had when translation started that never got a translation. */
   skipped: number;
+  /** `page` for a whole-page run, otherwise the name of the scope the session is limited to. */
+  scope: string;
 }
 
 type LiveState = 'idle' | 'queued' | 'running' | 'done';
@@ -206,6 +233,8 @@ interface Live {
   partError: boolean[];
   rect: DOMRect | null;
   batchToken: number;
+  /** The scope root a scoped block was found in; language detection stays inside it. */
+  scopeRoot?: Element;
   /** Selection only: normalized source, its model input, and the break map. */
   plainSource?: string;
   plainBreakMap?: PlainTextBreakMap;
@@ -291,6 +320,8 @@ export interface PageSessionOptions {
   folderGrantUiActive?: boolean;
   /** Opens the toolbar popup or a top-level grant window from the in-page hint. */
   onFolderEnable?: () => void;
+  /** Limits page translation to part of the page. Missing or null translates the whole page. */
+  scope?: SessionScope | null;
 }
 
 export function preferencesFor(
@@ -347,6 +378,7 @@ export class PageSession {
   private readonly idleWaiters: Array<() => void> = [];
   private prefs: SessionPreferences;
   private labels: OverlayLabels;
+  private scope: SessionScope | null;
   private detectedLanguage: string | null = null;
   private active = false;
   private paused = false;
@@ -439,6 +471,7 @@ export class PageSession {
     this.onPageCommand = options.onPageCommand;
     this.folderGrantUiActive = options.folderGrantUiActive === true;
     this.onFolderEnable = options.onFolderEnable;
+    this.scope = options.scope ?? null;
     this.scheduleFrame =
       options.scheduleFrame ??
       ((callback) => {
@@ -585,6 +618,31 @@ export class PageSession {
     this.detectedLanguage = language;
   }
 
+  /**
+   * Switches between a whole-page run and a scoped one. A running translation is put back
+   * first, because the blocks it holds were chosen under the previous scope; the caller
+   * decides whether to start again.
+   */
+  setScope(scope: SessionScope | null): void {
+    if (scope === this.scope) return;
+    if (this.active) this.restore();
+    this.scope = scope;
+  }
+
+  scopeName(): string {
+    return this.scope?.name ?? 'page';
+  }
+
+  /**
+   * Looks for new or changed blocks soon. For a caller that changed the page itself, such as
+   * by pressing a control that swaps text in place: a mutation that lands in the same batch
+   * as one of this session's own paints is ignored, so it may not trigger a scan on its own.
+   */
+  rescan(): void {
+    if (!this.active) return;
+    this.scheduleScan();
+  }
+
   setLabels(labels: OverlayLabels): void {
     this.labels = labels;
     this.overlay.setLabels(labels);
@@ -657,7 +715,9 @@ export class PageSession {
       if (lives.some((item) => item.engine === 'plamo')) engine = 'plamo';
       else if (lives.some((item) => item.engine === 'chrome')) engine = 'chrome';
     }
-    const pageLanguage = this.sourceLanguage();
+    // A scoped page's `<html lang>` is the site's interface language, not the language of the
+    // text being translated, so it is not reported as the page language.
+    const pageLanguage = this.scope ? null : this.sourceLanguage();
     const rates = this.rates();
 
     return {
@@ -681,6 +741,7 @@ export class PageSession {
       tokensPerSecond: rates.tokensPerSecond,
       segmentsPerSecond: rates.segmentsPerSecond,
       skipped: this.active ? this.skippedProse() : 0,
+      scope: this.scopeName(),
     };
   }
 
@@ -741,9 +802,11 @@ export class PageSession {
     this.pageController = new AbortController();
     this.eagerOnce = true;
     this.lastRateAt = 0;
-    this.rememberSourceLanguage();
-    this.alignTargetLanguage();
-    this.doc.documentElement.lang = this.prefs.targetLanguage;
+    if (!this.scope) {
+      this.rememberSourceLanguage();
+      this.alignTargetLanguage();
+      this.doc.documentElement.lang = this.prefs.targetLanguage;
+    }
     this.publishState();
     await this.requestScan();
     this.pump();
@@ -1121,7 +1184,7 @@ export class PageSession {
   }
 
   private async scanRoot(): Promise<void> {
-    const roots: ParentNode[] = [];
+    const roots: (Document | ShadowRoot)[] = [];
     for (const document of collectDocuments(this.doc)) {
       roots.push(document);
       for (const shadow of collectShadowRoots(document)) roots.push(shadow);
@@ -1129,9 +1192,9 @@ export class PageSession {
 
     let index = 0;
     for (const root of roots) {
-      for (const block of eachTranslatableBlock(root)) {
+      for (const [block, scopeRoot] of this.blocksIn(root)) {
         if (!this.active) return;
-        this.addBlock(block, index);
+        this.addBlock(block, index, scopeRoot);
         index += 1;
         if (index % SLICE_SIZE === 0) {
           if (this.hasVisibleProse()) this.pump();
@@ -1143,6 +1206,22 @@ export class PageSession {
     this.bindVisibility();
   }
 
+  /** Every translatable block of one root, each with the scope root it was found in. */
+  private *blocksIn(
+    root: Document | ShadowRoot,
+  ): Generator<readonly [Element, Element | undefined]> {
+    if (!this.scope) {
+      for (const block of eachTranslatableBlock(root)) yield [block, undefined];
+      return;
+    }
+    // Snapshot the roots first: translating a block rewrites text inside a root, and a
+    // live query would see the roots move under it.
+    for (const scopeRoot of [...this.scope.roots(root)]) {
+      if (!scopeRoot.isConnected) continue;
+      for (const block of eachTranslatableBlock(scopeRoot)) yield [block, scopeRoot];
+    }
+  }
+
   /**
    * A translated page must not read as finished while visible prose has no translation.
    * A block is admitted when it becomes a translation job; it is skipped when it is
@@ -1150,16 +1229,19 @@ export class PageSession {
    * prose but that produced no job is reported, so a page whose collector found too
    * little can no longer present "Translated" over an English column.
    */
-  private addBlock(block: Element, index: number): void {
+  private addBlock(block: Element, index: number, scopeRoot?: Element): void {
     if (this.liveByBlock.has(block)) return;
 
     const model = buildSegment(block);
+    // Inside a scope the document-level guess describes the site's interface, not the text.
+    const fallback = this.scope ? null : this.detectedLanguage;
     if (
       isAlreadyTargetLanguage(
         block,
         this.prefs.targetLanguage,
-        this.detectedLanguage,
+        fallback,
         model?.source ?? '',
+        scopeRoot,
       )
     ) {
       return;
@@ -1194,7 +1276,7 @@ export class PageSession {
       heading: /^H[1-6]$/u.test(block.tagName),
       solo: model.source.includes('\n'),
       kind: contentKind(block),
-      lang: languageOf(block, this.detectedLanguage, model.source),
+      lang: languageOf(block, fallback, model.source, scopeRoot),
       index,
       band: bandForRect(block.getBoundingClientRect(), viewportHeight(block)),
       state: 'idle',
@@ -1207,6 +1289,7 @@ export class PageSession {
       partError: [],
       rect: null,
       batchToken: 0,
+      ...(scopeRoot ? { scopeRoot } : {}),
     };
 
     this.live.set(item.id, item);
@@ -2245,8 +2328,22 @@ export class PageSession {
     this.overlay.hideOriginal();
   }
 
+  /** True when a mutation record can matter to the scope; always true for a whole page. */
+  private recordTouchesScope(record: MutationRecord): boolean {
+    const scope = this.scope;
+    if (!scope) return true;
+    if (scope.touches(record.target)) return true;
+    for (const node of record.addedNodes) if (scope.touches(node)) return true;
+    for (const node of record.removedNodes) if (scope.touches(node)) return true;
+    return false;
+  }
+
   private onMutations(records: MutationRecord[]): void {
     if (!this.active || this.applying > 0) return;
+    if (this.scope) {
+      records = records.filter((record) => this.recordTouchesScope(record));
+      if (records.length === 0) return;
+    }
     let external = false;
     let removed = 0;
     const stale = new Set<Element>();
@@ -2348,8 +2445,9 @@ export class PageSession {
     const model = buildSegment(block);
     if (model && model.source === existing.source) return;
     const index = existing.index;
+    const scopeRoot = existing.scopeRoot;
     this.forgetLive(existing, false);
-    this.addBlock(block, index);
+    this.addBlock(block, index, scopeRoot);
   }
 
   private forgetDisconnected(): void {
