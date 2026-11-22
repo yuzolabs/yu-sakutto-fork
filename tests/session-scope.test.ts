@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
+import { uiShadow } from '@/dom/overlay';
 import {
   PageSession,
   type PageEngine,
@@ -262,5 +263,82 @@ describe('scoped page session', () => {
     await session.translate();
     await settle(session);
     expect(document.querySelector('p')?.textContent).toBe('訳:Sidebar copy outside the scope.');
+  });
+});
+
+/** The bar's two buttons, in order: restore and "always translate this site". */
+function barButtons(): HTMLButtonElement[] {
+  const shadow = uiShadow(document.querySelector('sakutto-bar'));
+  return [...(shadow?.querySelectorAll<HTMLButtonElement>('.actions button') ?? [])];
+}
+
+function barText(): string {
+  return (
+    uiShadow(document.querySelector('sakutto-bar'))?.querySelector('.bar > span')?.textContent ?? ''
+  );
+}
+
+describe('page bar for a caller that owns the restore control', () => {
+  it('hands the restore control to the caller instead of restoring', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML = '<p data-scope lang="en">This post is written in English.</p>';
+    let pressed = 0;
+    const session = new PageSession(document, {
+      engine,
+      labels,
+      preferences: preferences(),
+      scheduleFrame: (callback) => callback(),
+      debounceMs: 10,
+      scope,
+      onBarOriginal: () => {
+        pressed += 1;
+      },
+    });
+    sessions.push(session);
+    await session.translate();
+    await settle(session);
+    expect(session.isActive()).toBe(true);
+
+    barButtons()[0]?.click();
+    expect(pressed).toBe(1);
+    // The caller decides; the session did not restore on its own.
+    expect(session.isActive()).toBe(true);
+  });
+
+  it('hides "always translate this site" when asked and shows it again', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML = '<p data-scope lang="en">This post is written in English.</p>';
+    const session = new PageSession(document, {
+      engine,
+      labels,
+      preferences: preferences(),
+      scheduleFrame: (callback) => callback(),
+      debounceMs: 10,
+      scope,
+      barAlwaysShown: false,
+    });
+    sessions.push(session);
+    await session.translate();
+    await settle(session);
+    const always = barButtons()[1];
+    expect(always?.hidden).toBe(true);
+    expect(always?.style.display).toBe('none');
+
+    session.setBarAlwaysShown(true);
+    expect(always?.hidden).toBe(false);
+    expect(always?.style.display).toBe('');
+  });
+
+  it('rewords a running bar as soon as the labels change', async () => {
+    document.documentElement.lang = 'ja';
+    document.body.innerHTML = '<p data-scope lang="en">This post is written in English.</p>';
+    const session = start();
+    await session.translate();
+    await settle(session);
+    expect(barText()).toBe(labels.barDone);
+
+    session.setLabels({ ...labels, barDone: '表示中のX本文を翻訳しました。', barOriginal: '停止' });
+    expect(barText()).toBe('表示中のX本文を翻訳しました。');
+    expect(barButtons()[0]?.textContent).toBe('停止');
   });
 });

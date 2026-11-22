@@ -322,6 +322,13 @@ export interface PageSessionOptions {
   onFolderEnable?: () => void;
   /** Limits page translation to part of the page. Missing or null translates the whole page. */
   scope?: SessionScope | null;
+  /**
+   * Replaces what the bar's "restore" control does. Without it the control restores the
+   * page; a caller that treats it as "stop for this tab" records that and restores itself.
+   */
+  onBarOriginal?: () => void;
+  /** False hides the bar's "always translate this site" control. Defaults to shown. */
+  barAlwaysShown?: boolean;
 }
 
 export function preferencesFor(
@@ -379,6 +386,7 @@ export class PageSession {
   private prefs: SessionPreferences;
   private labels: OverlayLabels;
   private scope: SessionScope | null;
+  private barAlwaysShown: boolean;
   private detectedLanguage: string | null = null;
   private active = false;
   private paused = false;
@@ -472,6 +480,7 @@ export class PageSession {
     this.folderGrantUiActive = options.folderGrantUiActive === true;
     this.onFolderEnable = options.onFolderEnable;
     this.scope = options.scope ?? null;
+    this.barAlwaysShown = options.barAlwaysShown !== false;
     this.scheduleFrame =
       options.scheduleFrame ??
       ((callback) => {
@@ -488,8 +497,12 @@ export class PageSession {
     });
     this.overlay.setOnClose(() => this.dismissSelection());
     this.overlay.setOnSelectionIcon(() => this.activateSelectionIcon());
+    const onBarOriginal = options.onBarOriginal;
     this.overlay.setBarActions({
-      onOriginal: () => this.restore(),
+      onOriginal: () => {
+        if (onBarOriginal) onBarOriginal();
+        else this.restore();
+      },
       onAlways: () => {
         void this.rememberAlways();
       },
@@ -633,6 +646,18 @@ export class PageSession {
     return this.scope?.name ?? 'page';
   }
 
+  /** True while a page translation runs (scoped or whole page). */
+  isActive(): boolean {
+    return this.active;
+  }
+
+  /** Shows or hides the bar's "always translate this site" control. */
+  setBarAlwaysShown(shown: boolean): void {
+    if (this.barAlwaysShown === shown) return;
+    this.barAlwaysShown = shown;
+    this.publishState();
+  }
+
   /**
    * Looks for new or changed blocks soon. For a caller that changed the page itself, such as
    * by pressing a control that swaps text in place: a mutation that lands in the same batch
@@ -644,8 +669,11 @@ export class PageSession {
   }
 
   setLabels(labels: OverlayLabels): void {
+    const changed = labels !== this.labels;
     this.labels = labels;
     this.overlay.setLabels(labels);
+    // The bar text is built from the labels, so a running page shows the new wording now.
+    if (changed && this.active) this.publishState();
   }
 
   /** Called when the engine status says whether the shared folder grant needs action. */
@@ -2306,6 +2334,7 @@ export class PageSession {
       original: this.labels.barOriginal,
       always: view.auto === 'always' ? this.labels.barAlwaysOn : this.labels.barAlways,
       alwaysEnabled: view.auto !== 'always',
+      alwaysShown: this.barAlwaysShown,
     });
   }
 
