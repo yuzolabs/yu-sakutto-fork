@@ -355,6 +355,14 @@ export interface Settings {
   gmailAutoTranslateLangs: string[];
   /** Source languages the mail banner leaves alone. */
   gmailNeverTranslateLangs: string[];
+  /**
+   * X post translation: on `https://x.com/*` (Chrome build only), translate post text,
+   * Community Notes, Articles and article previews that are not in the target language,
+   * and nothing else on the page. Where X shows its own Grok translation, X's "Show
+   * original" control is pressed once per item in the tab first. Off by default; turning it
+   * on asks for the x.com origin.
+   */
+  translateXBody: boolean;
 }
 
 export type SettingsPatch = Partial<
@@ -395,6 +403,7 @@ export type SettingsPatch = Partial<
     | 'gmailTranslateBanner'
     | 'gmailAutoTranslateLangs'
     | 'gmailNeverTranslateLangs'
+    | 'translateXBody'
   >
 > & {
   shortcutsEnabled?: Partial<ShortcutEnabled>;
@@ -438,6 +447,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   gmailTranslateBanner: true,
   gmailAutoTranslateLangs: [],
   gmailNeverTranslateLangs: [],
+  translateXBody: false,
 });
 
 export function createDefaultSettings(uiLanguage: string): Settings {
@@ -508,6 +518,7 @@ export function normalizeSettings(value: unknown, uiLanguage: string): Settings 
     gmailTranslateBanner: value.gmailTranslateBanner !== false,
     gmailAutoTranslateLangs: gmailLanguages.auto,
     gmailNeverTranslateLangs: gmailLanguages.never,
+    translateXBody: value.translateXBody === true,
   };
 }
 
