@@ -249,7 +249,7 @@ pnpm zip:firefox    # Firefox 用 zip
 
 `pnpm build` は、ピン留めした `pdfjs-dist` のビルドを先にパッケージへコピーします（`pnpm pdfjs` はその工程だけを実行します）。リーダーは同梱したファイルから pdf.js を読みます。pdf.js は worker、CMap、標準フォントの代替を自分からの相対位置で解決するためです。
 
-`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージをビルドします。これはリリース用のビルドではなく、リリース用のビルドにテスト用の翻訳処理は入りません。
+`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージを `.output/chrome-mv3` のリリース用ビルドとは別の `.output/fixture/chrome-mv3` にビルドします。リリース用のビルドにテスト用の翻訳処理は入りません。
 
 `pnpm icons` は、`scripts/generate-icons.mjs` から PNG アイコンを作り直します。`pnpm i18n:check` は、`public/_locales` の全カタログを英語と突き合わせ、キー、プレースホルダー、空の文言を検査します。`pnpm i18n:draft <カタログ> <言語>` は、同梱しているのと同じ PLaMo で下書きを作ります。どちらも [docs/TRANSLATING.ja.md](docs/TRANSLATING.ja.md) にあります。
 
@@ -258,7 +258,7 @@ pnpm zip:firefox    # Firefox 用 zip
 <details>
 <summary><strong>ページのベンチマーク</strong></summary>
 
-`pnpm bench` は、ビルドした拡張機能をヘッドレスの Chromium（`--load-extension` を拒否する通常の Chrome の代わりに、Playwright の Chrome for Testing を使います）で読み込み、4 つの固定ローカルページを実際の 0.8B モデルで翻訳します。長い記事、ニュース記事、ドキュメント、クライアント側で描画するページです。最初のトークンまでの時間と出力速度を測る短いエンジン確認も行います。`--pages-only`、`--engine-only`、`--sweep`（スレッド、コンテキスト、バッチサイズ）を渡せます。モデルは SHA-256 の確認後に `bench/.cache/` へキャッシュします。先に `SAKUTTO_E2E_REAL=1 pnpm build` でビルドしてください。結果は `bench/results/` に書き出します。
+`pnpm bench` は、ビルドした拡張機能をヘッドレスの Chromium（`--load-extension` を拒否する通常の Chrome の代わりに、Playwright の Chrome for Testing を使います）で読み込み、4 つの固定ローカルページを実際の 0.8B モデルで翻訳します。長い記事、ニュース記事、ドキュメント、クライアント側で描画するページです。最初のトークンまでの時間と出力速度を測る短いエンジン確認も行います。`--pages-only`、`--engine-only`、`--sweep`（スレッド、コンテキスト、バッチサイズ）を渡せます。モデルは SHA-256 の確認後に `bench/.cache/` へキャッシュします。先に `SAKUTTO_E2E_REAL=1 pnpm build` でビルドしてください。これにより拡張機能が（`.output/chrome-mv3` とは別の）`.output/fixture/chrome-mv3` に書き出され、`pnpm bench` はそこから読み込みます。結果は `bench/results/` に書き出します。
 
 `pnpm bench:mock` と `pnpm bench:live` は、読者が実際に待つ時間をページ単位で測ります。[bench/pages](bench/pages) の 8 つのページは、それぞれ別のコストを切り出しています（長い記事、先頭の 1 段落と長い残り、短いカードの多数、非常に長い 1 段落、サイドバー、混在する UI、記事ヘッダー内の見出し、後から差し込まれる内容）。実行するたびに `bench/history/pages.jsonl` に追記されるので、後のコミットを同じページで前のコミットと比べられます。`pnpm bench:serve` を使うと、そのページを自分のブラウザで開けます。指標、モックと実モデルの違い、ページの追加方法は [bench/README.md](bench/README.md) にあります。
 

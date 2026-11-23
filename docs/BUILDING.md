@@ -41,8 +41,8 @@ The script runs these steps:
 `pnpm build:wllama` deletes `public/vendor/wllama/` before it starts, so a failed build never leaves
 the previous wasm in the next package. `pnpm verify:wllama` checks `wllama-build.json` against both
 the dist and the public copies (byte count, SHA-256, extra or missing files) and is part of
-`pnpm build` and `pnpm zip`. `pnpm test:e2e` builds a separate package that translates in the page
-and does not require the wasm artifacts.
+`pnpm build` and `pnpm zip`. `pnpm test:e2e` builds a separate package into
+`.output/fixture/chrome-mv3` that translates in the page and does not require the wasm artifacts.
 
 ## Outputs
 

@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { chromeExtensionDir } from '../scripts/extension-output.ts';
 import { loadExtension } from './extension';
 
 interface WorkerMessage {
@@ -9,7 +11,7 @@ interface WorkerMessage {
 
 test('starts the packaged wllama worker', async () => {
   test.skip(
-    !existsSync('.output/chrome-mv3/vendor/wllama/wllama.wasm'),
+    !existsSync(join(chromeExtensionDir(process.cwd(), 'fixture'), 'vendor/wllama/wllama.wasm')),
     'The packaged wllama build is not in this extension.',
   );
 
