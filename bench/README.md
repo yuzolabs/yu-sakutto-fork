@@ -58,6 +58,14 @@ recorded run is a real user-visible run.
 Both modes need a Chromium that Playwright can drive (`pnpm exec playwright install chromium`),
 because branded Chrome refuses `--load-extension`.
 
+`pnpm bench:build:mock` and `pnpm bench:build:live` both write the extension to
+`.output/fixture/chrome-mv3` (separate from the release build in `.output/chrome-mv3`), and
+`pnpm bench:mock` and `pnpm bench:live` load it from there (`--extension <dir>` overrides the
+path). Because mock and live fixture builds share `.output/fixture/chrome-mv3`, whichever of
+`pnpm bench:build:mock`, `pnpm bench:build:live`, or `pnpm test:e2e` ran last is what is on disk;
+the page bench checks the built content script and refuses a build of the wrong kind rather than
+measuring a stale build.
+
 ### Mock mode — default, no model download
 
 ```sh

@@ -49,7 +49,9 @@ pnpm build          # 成果物は .output/chrome-mv3
 pnpm build:firefox  # Firefox 153 以降。成果物は .output/firefox-mv3
 ```
 
-`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージをビルドします。これはリリース用のビルドではありません。Firefox は `about:debugging` から `.output/firefox-mv3/manifest.json` を読みます。[docs/FIREFOX.md](docs/FIREFOX.md) を参照してください。
+`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージを `.output/fixture/chrome-mv3` にビルドします。`scripts/extension-output.ts` の規則では、`SAKUTTO_FAKE_ENGINE=1` または `SAKUTTO_E2E_REAL=1` を設定したビルドはすべてこのディレクトリに出力されるため、`pnpm test:e2e` はブラウザに読み込んでいる `.output/chrome-mv3` を上書きしません。`.output/chrome-mv3` をパッケージ化されていない拡張機能として読み込んだブラウザは、新しく開いたタブにもディスク上の内容をそのまま使うので、このディレクトリはリリース用のビルドのままにしておく必要があります。テスト用パッケージはリリース用のビルドではありません。同じ規則は `pnpm build` にも当てはまります。シェルに `SAKUTTO_FAKE_ENGINE=1` や `SAKUTTO_E2E_REAL=1` がエクスポートされたままだと、`pnpm build` でも `.output/fixture/chrome-mv3` に書き出され、テスト用のホスト権限が付与されます。**パッケージ化されていない拡張機能を読み込む** 用に `pnpm build` を実行するときは、どちらも設定されていないシェルから実行してください。
+
+Firefox は `about:debugging` から `.output/firefox-mv3/manifest.json` を読みます。[docs/FIREFOX.md](docs/FIREFOX.md) を参照してください。
 
 ## 実際にあるコマンド
 

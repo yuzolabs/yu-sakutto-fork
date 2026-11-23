@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 
+import { chromeExtensionDir } from '../extension-output.ts';
 import {
   JA_TOKENS_PER_CHAR,
   MODEL_ID,
@@ -489,7 +490,7 @@ export function defaultRunLabel(mode: BenchMode, at = new Date()): string {
  */
 export async function runPageBench(options: RunPageBenchOptions): Promise<RunPageBenchResult> {
   const mode = options.mode;
-  const requested = resolve(options.extension ?? resolve(ROOT, '.output/chrome-mv3'));
+  const requested = resolve(options.extension ?? chromeExtensionDir(ROOT, 'fixture'));
   // A live run always loads from the same path so the extension keeps one origin, and with
   // it one copy of the model in the profile. See `stable-extension.ts`.
   const extension = mode === 'live' ? await stageExtension(requested) : requested;

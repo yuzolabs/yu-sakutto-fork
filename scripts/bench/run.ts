@@ -3,6 +3,7 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 
+import { chromeExtensionDir } from '../extension-output.ts';
 import { BATCH_SENTENCES, QUALITY_PARAGRAPH, SHORT_TEXT, enginePage } from './engine-page.ts';
 import { PAGES } from './fixtures.ts';
 import {
@@ -75,7 +76,7 @@ function rssMb(needle: string): number {
 }
 
 function extensionDir(): string {
-  return resolve(arg('--extension') ?? resolve(ROOT, '.output/chrome-mv3'));
+  return resolve(arg('--extension') ?? chromeExtensionDir(ROOT, 'fixture'));
 }
 
 function vendorDir(): string {

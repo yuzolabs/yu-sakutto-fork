@@ -251,7 +251,7 @@ pnpm zip:firefox    # Firefox zip
 
 `pnpm build` copies the pinned `pdfjs-dist` build into the package first (`pnpm pdfjs` runs that step alone). The reader loads it from a packaged file because pdf.js resolves its worker, CMaps, and standard font substitutes relative to itself.
 
-`pnpm test:e2e` builds a test package that translates inside the page. That package is not the release build, and the release build does not include the test translator.
+`pnpm test:e2e` builds a test package into `.output/fixture/chrome-mv3`, separate from the release build in `.output/chrome-mv3`. That package translates inside the page; the release build does not include the test translator.
 
 `pnpm icons` regenerates the PNG icons from `scripts/generate-icons.mjs`. `pnpm i18n:check` compares every catalog in `public/_locales` against English for missing keys, placeholder tokens, and empty messages. `pnpm i18n:draft <catalog> <language>` drafts a catalog with the same PLaMo model the extension ships. Both are described in [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
@@ -260,7 +260,7 @@ pnpm zip:firefox    # Firefox zip
 <details>
 <summary><strong>Page benchmarks</strong></summary>
 
-`pnpm bench` loads the built extension in headless Chromium (Playwright's Chrome for Testing build, because branded Chrome refuses `--load-extension`) and translates four fixed local pages with the real 0.8B model: a long article, a news article, a docs page, and a client-rendered page. It also runs a short engine probe for time to first token and output speed. Pass `--pages-only`, `--engine-only`, or `--sweep` (thread, context, and batch sizes). The model is cached under `bench/.cache/` after a SHA-256 check. Build with `SAKUTTO_E2E_REAL=1 pnpm build` first so the harness can script the local pages. Results are written to `bench/results/`.
+`pnpm bench` loads the built extension in headless Chromium (Playwright's Chrome for Testing build, because branded Chrome refuses `--load-extension`) and translates four fixed local pages with the real 0.8B model: a long article, a news article, a docs page, and a client-rendered page. It also runs a short engine probe for time to first token and output speed. Pass `--pages-only`, `--engine-only`, or `--sweep` (thread, context, and batch sizes). The model is cached under `bench/.cache/` after a SHA-256 check. Build with `SAKUTTO_E2E_REAL=1 pnpm build` first so the harness can script the local pages; that writes the extension to `.output/fixture/chrome-mv3` (separate from `.output/chrome-mv3`), and `pnpm bench` loads it from there. Results are written to `bench/results/`.
 
 `pnpm bench:mock` and `pnpm bench:live` measure whole pages the way a reader experiences them, on eight fixtures in [bench/pages](bench/pages) that each isolate a different cost (a long article, a short lead with a long tail, many short cards, one very long paragraph, a sidebar, mixed UI, a headline inside the article header, and late-mounted content). Every run appends to `bench/history/pages.jsonl`, so a later commit can be diffed against an earlier one on the same pages. `pnpm bench:serve` opens those fixtures in your own browser. See [bench/README.md](bench/README.md) for the metrics, the mock-versus-live distinction, and how to add a fixture.
 
