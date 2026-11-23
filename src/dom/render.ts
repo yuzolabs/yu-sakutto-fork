@@ -79,6 +79,13 @@ export function showBilingual(model: SegmentModel, translation: string, created:
   const line = ensureChild(model.block, LINE_TAG);
   line.replaceChildren();
   line.setAttribute('translate', 'no');
+  // A source with line breaks (`<br>` or newlines the page paints) comes back with `\n` in
+  // the translation. The line inherits the block's `white-space`, usually `normal`, which
+  // folds them into one line, so the line paints them itself. Should `ensureChild` hand back
+  // an existing line, a one-line source drops the rule again.
+  if (model.source.includes('\n')) line.style.setProperty('white-space', 'pre-wrap');
+  else line.style.removeProperty('white-space');
+  if (line.getAttribute('style') === '') line.removeAttribute('style');
   line.append(model.block.ownerDocument.createTextNode(visibleTranslation(translation)));
 }
 
@@ -448,11 +455,107 @@ function lineChunks(text: string, groups: readonly LineGroup[]): string[] {
 }
 
 /**
+ * The source lines of one `<br>` line run whose text also holds newlines the page paints
+ * through `white-space` (X post text). `lines` are the lines with text, `breaks[i]` is the
+ * whitespace run, with its newlines, between `lines[i]` and `lines[i + 1]`, and `head` /
+ * `tail` are the runs that open or close the text with a newline (empty when it does not).
+ * The runs are kept byte for byte so the translation keeps the post's blank lines.
+ */
+interface PaintedLines {
+  lines: string[];
+  breaks: string[];
+  head: string;
+  tail: string;
+}
+
+const PAINTED_BREAK_RUN = /(\s*[\r\n]\s*)/u;
+
+function splitPaintedLines(source: string): PaintedLines {
+  // `split` with a capture group alternates line text and the newline run between lines.
+  const pieces = source.split(PAINTED_BREAK_RUN);
+  let head = '';
+  let tail = '';
+  if (pieces.length > 1 && pieces[0] === '') {
+    head = pieces[1] ?? '';
+    pieces.splice(0, 2);
+  }
+  if (pieces.length > 1 && pieces.at(-1) === '') {
+    tail = pieces.at(-2) ?? '';
+    pieces.splice(-2, 2);
+  }
+  return {
+    lines: pieces.filter((_, index) => index % 2 === 0),
+    breaks: pieces.filter((_, index) => index % 2 === 1),
+    head,
+    tail,
+  };
+}
+
+function countTextLines(text: string): number {
+  return text.split('\n').filter((line) => line.trim().length > 0).length;
+}
+
+/**
+ * Puts one run's translated lines back together with the run's own newlines between them,
+ * and its opening and closing newlines around them, so CSS paints the post's line layout.
+ * A line left empty (fewer sentences than lines) is dropped with the break before it rather
+ * than painted as a stray blank line.
+ */
+function joinPaintedLines(chunks: readonly string[], shape: PaintedLines): string {
+  let body = '';
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index] ?? '';
+    if (chunk.trim().length === 0) continue;
+    body += body.trim().length === 0 ? chunk : `${shape.breaks[index - 1] ?? '\n'}${chunk}`;
+  }
+  if (shape.head.length > 0) body = shape.head + body.trimStart();
+  if (shape.tail.length > 0) body = body.trimEnd() + shape.tail;
+  return body;
+}
+
+/**
+ * Writes a gap whose text nodes hold newlines the page paints. X draws a multi-line post
+ * with literal newlines and CSS instead of `<br>`, so each painted line is a line of its
+ * own next to the `<br>` runs. When the model returned one paragraph, the text is spread
+ * over every line the same way `<br>` lines are, and each run's lines are joined with the
+ * run's own newlines into its first text node: no `<br>` is created, so restore only puts
+ * node values back. When the model kept its own newlines in a run without `<br>`, CSS
+ * already paints them and only the run's opening and closing newlines are put back.
+ */
+function writePaintedLines(text: string, groups: readonly LineGroup[]): void {
+  // The slots of one gap are text nodes of the same element, so when one of them paints its
+  // newlines every newline in the gap is painted, and all of them are line boundaries.
+  const shapes = groups.map((group) =>
+    splitPaintedLines(group.slots.map((slot) => slot.original).join('')),
+  );
+  const lines: LineGroup[] = shapes.flatMap((shape) =>
+    shape.lines.map((line) => ({ slots: [], source: line })),
+  );
+
+  // Every run has at least one line, so a single line or a kept model layout means a single
+  // run that takes the whole text.
+  const keepsModelLines =
+    groups.length === 1 && text.includes('\n') && countTextLines(text) !== lines.length;
+  const whole = lines.length <= 1 || keepsModelLines;
+  const chunks = whole ? [text] : lineChunks(text, lines);
+
+  let cursor = 0;
+  for (let index = 0; index < groups.length; index += 1) {
+    const shape = shapes[index];
+    if (!shape) continue;
+    const own = whole ? chunks : chunks.slice(cursor, cursor + shape.lines.length);
+    cursor += shape.lines.length;
+    writeSlots(groups[index]?.slots ?? [], joinPaintedLines(own, shape));
+  }
+}
+
+/**
  * Writes a translation back over the line runs the source already had. The first fix for
  * Gmail wrapped each line in a span; that mutated the page, split one mail into a request
  * per line and left markup behind on restore. This pass uses the existing text nodes: after
  * placeholders are applied, each gap holds the translated text for all of its lines, and it
  * is redistributed over those lines so the `<br>` nodes keep painting the message layout.
+ * Newlines the page paints inside a text node count as line boundaries as well.
  */
 function rebalanceLines(frame: Frame): void {
   const lineBySlot = slotLines(frame.element);
@@ -471,9 +574,13 @@ function rebalanceLines(frame: Frame): void {
     }
 
     if (usable.length > 0 && text.trim().length > 0) {
-      const chunks = usable.length === 1 ? [text] : lineChunks(text, usable);
-      for (let index = 0; index < usable.length; index += 1) {
-        writeSlots(usable[index]?.slots ?? [], chunks[index] ?? '');
+      if (usable.some((group) => group.slots.some((slot) => slot.paintedNewlines))) {
+        writePaintedLines(text, usable);
+      } else {
+        const chunks = usable.length === 1 ? [text] : lineChunks(text, usable);
+        for (let index = 0; index < usable.length; index += 1) {
+          writeSlots(usable[index]?.slots ?? [], chunks[index] ?? '');
+        }
       }
     }
 

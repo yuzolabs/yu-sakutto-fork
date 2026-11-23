@@ -293,6 +293,44 @@ test.describe('X post translation', () => {
     }
   });
 
+  test('keeps the lines of a multi-line post that X paints without <br>', async () => {
+    const extension = await loadExtension('ja');
+    try {
+      const page = await openTimeline(extension.context, extension.worker, {
+        translateXBody: true,
+      });
+      await waitTranslated(page);
+      await page.locator('#post-multiline').scrollIntoViewIfNeeded();
+      const post = postText(page, '#post-multiline');
+      await expect(post).toContainText(MARK);
+
+      // How many line boxes the post's text span is painted on.
+      const paintedLines = () =>
+        post.evaluate((element) => element.querySelector('span')?.getClientRects().length ?? 0);
+
+      // innerText follows the rendering, so the newlines are still painted as line breaks.
+      expect(await post.innerText()).toBe(
+        `${MARK}Shipping today.\n\nThanks to all testers.\n${MARK}#release`,
+      );
+      expect(await post.locator('br').count()).toBe(0);
+      const translatedLines = await paintedLines();
+
+      // Back to the original: the text node gets its own newlines back.
+      await commandPage(extension.worker, page, 'restore');
+      await expect.poll(async () => (await pageState(extension.worker, page)).stopped).toBe(true);
+      await expect(post).not.toContainText('§');
+      expect(await post.innerText()).toBe('Shipping today.\n\nThanks to all testers.\n#release');
+      expect(await post.evaluate((element) => element.querySelector('span')?.textContent)).toBe(
+        'Shipping today.\n\nThanks to all testers.\n',
+      );
+      const originalLines = await paintedLines();
+      expect(originalLines).toBeGreaterThanOrEqual(3);
+      expect(translatedLines).toBe(originalLines);
+    } finally {
+      await extension.close();
+    }
+  });
+
   test('translates the title, headings, paragraphs, lists and captions of an Article', async () => {
     const extension = await loadExtension('ja');
     try {
