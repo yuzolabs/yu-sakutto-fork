@@ -1611,7 +1611,11 @@ export class PageSession {
         item.model.block.setAttribute('data-sakutto-pending', '1');
       }
       const pieces = expandSource(item);
-      const preserve = item.failures > 0 && item.partText.length === pieces.length;
+      // A retry after a failure, or a request restarted after an abort, keeps the pieces that
+      // already finished and asks only for the rest.
+      const preserve =
+        item.partText.length === pieces.length &&
+        (item.failures > 0 || item.partFinal.some(Boolean));
       item.partFinal = pieces.map((_, index) =>
         preserve ? item.partFinal[index] === true : false,
       );
@@ -2120,14 +2124,20 @@ export class PageSession {
           continue;
         }
         item.state = 'idle';
-        item.partText = [];
-        item.partFinal = [];
-        item.partError = [];
         item.model?.block.removeAttribute('data-sakutto-pending');
         // A block the session no longer tracks has nothing left to translate.
         if (requeue && this.active && !this.navigating && this.live.get(item.id) === item) {
+          // Pieces that already finished stay, so the restarted request asks only for the rest
+          // instead of sending text the engine has already translated.
+          item.partText = item.partText.map((text, index) =>
+            item.partFinal[index] === true ? text : '',
+          );
           this.enqueue(item);
+          continue;
         }
+        item.partText = [];
+        item.partFinal = [];
+        item.partError = [];
       }
     }
     if (released) this.pump();

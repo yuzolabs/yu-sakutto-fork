@@ -1281,6 +1281,58 @@ describe('page session', () => {
     );
   });
 
+  it('asks only for the unfinished pieces when a long block restarts', async () => {
+    document.documentElement.lang = 'en';
+    const sentence = 'This is one sentence about the release. ';
+    document.body.innerHTML = `<p id="lead">${sentence.repeat(50)}</p>`;
+    const calls: { ids: string[]; texts: string[] }[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const session = start(
+      document,
+      engineOf(async function* (segments, options) {
+        calls.push({
+          ids: segments.map((segment) => segment.id),
+          texts: segments.map((segment) => segment.text),
+        });
+        const aborted = new Promise<void>((resolve) => {
+          options.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        for (const [index, segment] of segments.entries()) {
+          // The first piece of a request finishes at once; the rest wait.
+          if (index > 0) await Promise.race([gate, aborted]);
+          if (options.signal.aborted) return;
+          yield { id: segment.id, final: `訳:${segment.text}`, engine: 'plamo' as const };
+        }
+      }),
+    );
+
+    const pending = session.translate();
+    for (let attempt = 0; attempt < 30 && session.state().done <= 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const first = calls[0];
+    expect(calls).toHaveLength(1);
+    expect(first?.ids.length).toBeGreaterThan(2);
+
+    // Moving to another path restarts every request in flight.
+    document.defaultView?.history.pushState({}, '', '/next-article');
+    for (let attempt = 0; attempt < 30 && calls.length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.ids).toEqual(first?.ids.slice(1));
+
+    release();
+    await pending;
+    await session.whenIdle();
+    const lead = document.querySelector('#lead')?.textContent ?? '';
+    for (const text of first?.texts ?? []) expect(lead).toContain(`訳:${text}`);
+    expect(session.state().done).toBe(1);
+  });
+
   it('sends selection spacing unchanged in the historical none mode', async () => {
     document.documentElement.lang = 'en';
     document.body.innerHTML = '<p>Hello world</p>';
