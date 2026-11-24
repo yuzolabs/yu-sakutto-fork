@@ -1209,6 +1209,78 @@ describe('page session', () => {
     await pending;
   });
 
+  it('keeps translating a block when the page unmounts another block still in flight', async () => {
+    document.documentElement.lang = 'en';
+    // A virtualized list (X's replies beside a photo) drops the row around a reply, not the
+    // reply itself, when a post above it changes height.
+    document.body.innerHTML = `
+      <p id="post">The post the reader opened is still being translated.</p>
+      <div id="row"><p>A reply that the list unmounts while the post grows.</p></div>
+      <div><p id="kept">Another reply that stays on the page.</p></div>`;
+    const calls: { texts: string[]; aborted: boolean }[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const session = start(
+      document,
+      engineOf(async function* (segments, options) {
+        const call = { texts: segments.map((segment) => segment.text), aborted: false };
+        calls.push(call);
+        const aborted = new Promise<void>((resolve) => {
+          options.signal.addEventListener(
+            'abort',
+            () => {
+              call.aborted = true;
+              resolve();
+            },
+            { once: true },
+          );
+        });
+        await Promise.race([gate, aborted]);
+        if (options.signal.aborted) return;
+        for (const segment of segments) {
+          yield { id: segment.id, final: `訳:${segment.text}`, engine: 'plamo' as const };
+        }
+      }),
+    );
+    const callsFor = (prefix: string) =>
+      calls.filter((call) => call.texts.some((text) => text.startsWith(prefix)));
+
+    const pending = session.translate();
+    for (let attempt = 0; attempt < 30 && calls.length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const [postCall] = callsFor('The post');
+    const [replyCall] = callsFor('A reply');
+    expect(postCall).toBeDefined();
+    expect(replyCall).toBeDefined();
+    expect(postCall).not.toBe(replyCall);
+    // Both replies share one request, so removing one of them stops it for the other too.
+    expect(callsFor('Another reply')).toEqual([replyCall]);
+
+    document.querySelector('#row')?.remove();
+    for (let attempt = 0; attempt < 30 && replyCall?.aborted !== true; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(replyCall?.aborted).toBe(true);
+    expect(postCall?.aborted).toBe(false);
+
+    release();
+    await pending;
+    await session.whenIdle();
+    expect(document.querySelector('#post')?.textContent).toBe(
+      '訳:The post the reader opened is still being translated.',
+    );
+    expect(callsFor('The post')).toHaveLength(1);
+    // The removed reply is not asked for again; the reply still on the page is.
+    expect(callsFor('A reply')).toHaveLength(1);
+    expect(callsFor('Another reply')).toHaveLength(2);
+    expect(document.querySelector('#kept')?.textContent).toBe(
+      '訳:Another reply that stays on the page.',
+    );
+  });
+
   it('sends selection spacing unchanged in the historical none mode', async () => {
     document.documentElement.lang = 'en';
     document.body.innerHTML = '<p>Hello world</p>';

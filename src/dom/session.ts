@@ -2124,7 +2124,10 @@ export class PageSession {
         item.partFinal = [];
         item.partError = [];
         item.model?.block.removeAttribute('data-sakutto-pending');
-        if (requeue && this.active && !this.navigating) this.enqueue(item);
+        // A block the session no longer tracks has nothing left to translate.
+        if (requeue && this.active && !this.navigating && this.live.get(item.id) === item) {
+          this.enqueue(item);
+        }
       }
     }
     if (released) this.pump();
@@ -2560,17 +2563,22 @@ export class PageSession {
     });
   }
 
+  /**
+   * Forgets the blocks the page took out of the document and stops only the requests that
+   * carry one of them. Requests for blocks still on the page keep running. A list that
+   * unmounts rows when the height above them changes (X's replies beside a photo, under a
+   * long post whose streamed translation keeps resizing it) would otherwise restart that
+   * post every time a row went away, so the post could translate the same text forever.
+   */
   private forgetDisconnected(): void {
-    let running = false;
+    const gone = new Set<Live>();
     for (const [block, item] of this.liveByBlock) {
-      if (block.isConnected) continue;
-      if (item.state === 'running') running = true;
+      if (!block.isConnected) gone.add(item);
     }
-    if (running) this.abortRunning(true);
-    for (const [block, item] of [...this.liveByBlock]) {
-      if (block.isConnected) continue;
-      this.forgetLive(item, false);
-    }
+    if (gone.size === 0) return;
+    // Forget first, so the aborted requests do not put the removed blocks back in the queue.
+    for (const item of gone) this.forgetLive(item, false);
+    this.abortBatches((batch) => batch.items.some((item) => gone.has(item)), true);
   }
 
   private scheduleScan(): void {
