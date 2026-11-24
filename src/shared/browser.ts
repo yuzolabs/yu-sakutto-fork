@@ -1,7 +1,7 @@
 export type ExtensionBrowser = 'chrome' | 'firefox';
 
-/** Add-on ID for AMO. It cannot change after the first listed upload. */
-export const FIREFOX_EXTENSION_ID = 'sakutto@jammaru';
+/** Add-on ID for AMO, distinct from upstream Sakutto's ID. It cannot change after the first listed upload. */
+export const FIREFOX_EXTENSION_ID = 'sakutto@yuzolabs';
 
 export const FIREFOX_STRICT_MIN_VERSION = '153.0';
 
