@@ -10,7 +10,7 @@ export const PLAMO_OFFICIAL_LINKS = {
 
 /** The extension's own pages: the privacy policy and the source repository. */
 export const PROJECT_LINKS = {
-  privacy: 'https://jammaru.com/sakutto/privacy/',
+  privacy: 'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/PRIVACY.md',
   source: 'https://github.com/yuzolabs/yu-sakutto-fork',
   localServerDocs:
     'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/docs/design/mlx-backend.md',

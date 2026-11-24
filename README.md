@@ -206,7 +206,7 @@ The built-in engine's own network traffic is limited to:
 - the PDF file, fetched from the site the tab is already showing, with that tab's cookies;
 - requests to an experimental local server, only when you enable it and only to the address you set.
 
-The model file is not bundled. You can remove it and clear the translation cache in Settings. Read the full policy at [PRIVACY.md](PRIVACY.md) or <https://jammaru.com/sakutto/privacy/>.
+The model file is not bundled. You can remove it and clear the translation cache in Settings. Read the full policy in [PRIVACY.md](PRIVACY.md).
 
 ## Permissions
 
