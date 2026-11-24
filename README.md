@@ -7,7 +7,6 @@
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="Latest release"></a>
-    <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/stargazers"><img src="https://img.shields.io/github/stars/yuzolabs/yu-sakutto-fork?style=flat&logo=github" alt="GitHub stars"></a>
   </p>
   <img src="docs/images/readme/en/hero-page-translation.jpg" width="900" alt="Sakutto translating a page in place, with the popup open">
@@ -292,7 +291,7 @@ pnpm bench:pdf --keep-cache  # reuse translations already in the profile
 
 ## Contributing
 
-Issues are welcome, and pull requests are very welcome. Open an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue if you can — that path is fully welcome, and an Issue by itself is also enough. Please use the issue forms and do not paste private page content. Questions are often faster in [Discord](https://discord.gg/pdSRBaSr38).
+Issues are welcome, and pull requests are very welcome. Open an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue if you can — that path is fully welcome, and an Issue by itself is also enough. Please use the issue forms and do not paste private page content. Send usage questions to the [Question issue form](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose).
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) (日本語: [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md))
 - [Code of Conduct](CODE_OF_CONDUCT.md)

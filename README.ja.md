@@ -5,7 +5,6 @@
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="ライセンス: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="最新リリース"></a>
-    <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/stargazers"><img src="https://img.shields.io/github/stars/yuzolabs/yu-sakutto-fork?style=flat&logo=github" alt="GitHub スター"></a>
   </p>
   <img src="docs/images/readme/ja/hero-page-translation.jpg" width="900" alt="Sakutto のポップアップを開いた、翻訳済みのページ">
@@ -290,7 +289,7 @@ pnpm bench:pdf --keep-cache  # プロファイルに残った訳を再利用
 
 ## 貢献
 
-Issue は歓迎です。pull request はとても歓迎します。まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、できるならその Issue への pull request を出してください。その順を歓迎しますが、Issue だけでも十分です。フォームを使い、非公開ページの本文は貼らないでください。使い方の質問は [Discord](https://discord.gg/pdSRBaSr38) の方が早いことがあります。
+Issue は歓迎です。pull request はとても歓迎します。まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、できるならその Issue への pull request を出してください。その順を歓迎しますが、Issue だけでも十分です。フォームを使い、非公開ページの本文は貼らないでください。使い方の質問は [質問の Issue フォーム](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose) に送ってください。
 
 - [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md)（English: [CONTRIBUTING.md](CONTRIBUTING.md)）
 - [行動規範](CODE_OF_CONDUCT.ja.md)（English: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)）
