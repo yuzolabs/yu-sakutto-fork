@@ -33,6 +33,8 @@ git push origin main vX.Y.Z
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) が `v*` のタグで動きます。通常の pull request ではこのワークフローは動きません。
 
+手動でも始められます。Actions で Release を選び、Run workflow を押して、`tag` にタグを入力します。タグはすでに push されている必要があります。手動の実行では、ワークフローのファイルは Actions タブで選んだブランチのもので、コードはタグのものです。
+
 1. タグ名が `package.json` の version に `v` を付けたものと一致することを確認します。`CHANGELOG.md` にその版の節があることも確認します。
 2. 既存の CI と同じく、lint、format、typecheck、unit test、e2e を実行します。Checks の checkout は `fetch-depth: 0` です（`tests/bench-fixtures.test.ts` が履歴のコミットを参照するため）。
 3. 既存の package アクション（[`.github/actions/package-extension`](../.github/actions/package-extension/action.yml)）で、wllama を **ソースから** ビルドします（`from-source: true`。CI の wasm キャッシュは使いません）。`pnpm zip`、パッケージ検査（`scripts/verify-package.ts`）、worker のスモークテストを行います。

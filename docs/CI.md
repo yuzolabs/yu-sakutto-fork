@@ -34,14 +34,14 @@ Measured before `checks` was split (GitHub-hosted `ubuntu-latest`). The miss is 
 
 ## Workflows
 
-| Workflow         | Trigger                                                                                         | Purpose                                                                                                          | Needed on           |
-| ---------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `ci.yml`         | `pull_request` (including drafts and `ready_for_review`), `push` to `main`, `workflow_dispatch` | Lint, format, typecheck, unit tests, e2e, pinned-wllama check, Chrome/Firefox package when the zip inputs change | PRs and main        |
-| `model-pins.yml` | same PR/main events, plus daily `17 3 * * *`                                                    | Range-check upstream `resolve/main` GGUF hash/size against the catalog's known revisions                         | PRs, main, schedule |
-| `release.yml`    | `v*` tags, `workflow_dispatch`                                                                  | Recheck the tag, compile wllama from source, zip Chrome, draft GitHub Release                                    | Tags only           |
-| `pr-labeler.yml` | `pull_request_target`                                                                           | Path labels from `.github/labeler.yml` on the base branch                                                        | PRs                 |
-| `community.yml`  | new issues / PRs                                                                                | Welcome comment and `needs-triage` on first issues                                                               | Issues/PRs          |
-| `labels.yml`     | changes to `.github/labels.yml`                                                                 | Sync issue labels; dry-run on PRs                                                                                | Rare                |
+| Workflow         | Trigger                                                                                         | Purpose                                                                                                          | Needed on                         |
+| ---------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `ci.yml`         | `pull_request` (including drafts and `ready_for_review`), `push` to `main`, `workflow_dispatch` | Lint, format, typecheck, unit tests, e2e, pinned-wllama check, Chrome/Firefox package when the zip inputs change | PRs and main                      |
+| `model-pins.yml` | same PR/main events, plus daily `17 3 * * *`                                                    | Range-check upstream `resolve/main` GGUF hash/size against the catalog's known revisions                         | PRs, main, schedule               |
+| `release.yml`    | `v*` tags, `workflow_dispatch` with a `tag` input                                               | Recheck the tag, compile wllama from source, zip Chrome, draft GitHub Release                                    | Tags, or a manual run for one tag |
+| `pr-labeler.yml` | `pull_request_target`                                                                           | Path labels from `.github/labeler.yml` on the base branch                                                        | PRs                               |
+| `community.yml`  | new issues / PRs                                                                                | Welcome comment and `needs-triage` on first issues                                                               | Issues/PRs                        |
+| `labels.yml`     | changes to `.github/labels.yml`                                                                 | Sync issue labels; dry-run on PRs                                                                                | Rare                              |
 
 ### CI jobs
 
@@ -111,6 +111,7 @@ PR pushes cancel the previous run on that branch. `main` and tags do not cancel.
 - `release.yml` Package sets `from-source: true` on `.github/actions/package-extension`. It does not restore a CI wasm cache. `wllama-build.json` still records inputs and output hashes.
 - The GitHub Release stays a draft.
 - Do not print secrets. Workflows pass them through `env:` and never `run: echo`.
+- A manual run takes the tag as its `tag` input. `RELEASE_TAG` is that input on a manual run and the pushed tag's name otherwise. Every step that names the tag reads it. `github.ref_name` must not be read for the tag, because on a manual run it is the branch.
 
 ## When CI is slow
 

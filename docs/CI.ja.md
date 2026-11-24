@@ -29,7 +29,7 @@ node scripts/ci-stats.ts yuzolabs/yu-sakutto-fork 200
 | ------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `ci.yml`                                          | PR（draft と `ready_for_review` を含む）、`main` への push、手動 | lint / 型 / 単体 / e2e / ピン留め検査 / 必要ならパッケージ                  |
 | `model-pins.yml`                                  | 同じ PR/`main`、毎日 03:17 UTC                                   | 上流 `resolve/main` の GGUF ハッシュ/サイズをカタログの既知リビジョンと照合 |
-| `release.yml`                                     | `v*` タグ、手動                                                  | タグ検証、wllama をソースからビルド、Chrome zip、GitHub Release 下書き      |
+| `release.yml`                                     | `v*` タグ、手動（`tag` 入力）                                    | タグ検証、wllama をソースからビルド、Chrome zip、GitHub Release 下書き      |
 | `pr-labeler.yml` / `community.yml` / `labels.yml` | ラベルと歓迎コメント                                             | 安い。残す                                                                  |
 
 ## CI ジョブ
@@ -63,6 +63,11 @@ PR に CI が無く、label と community だけが動いているときは、�
 - Playwright は `playwright-chromium-${RUNNER_OS}-${ImageOS}-<pnpm-lock sha256>` を 3 つの e2e shard で共有し、キャッシュヒット時は `PLAYWRIGHT_SKIP_INSTALL=1` で install を省きます。apt のフォントは入れません（`--with-deps` なし）。
 
 `main` では in-progress をキャンセルしません。PR ブランチだけキャンセルします。
+
+## リリース
+
+- 手動実行はタグを `tag` 入力で受け取ります。`RELEASE_TAG` は、手動実行ではその入力、それ以外では push されたタグの名前です。タグを扱うステップはすべてこの値を読みます。`github.ref_name` をタグとして使ってはいけません。手動実行ではブランチ名になるためです。
+- 手動で始めるには、Actions で Release を選び、Run workflow を押して、`tag` にタグを入力します。タグはすでに push されている必要があります。
 
 ## 遅い・赤いとき
 
