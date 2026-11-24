@@ -27,9 +27,7 @@ For PLaMo's 53 languages, every translated line comes from PLaMo. On Chrome, Chr
 - [Permissions](#permissions)
 - [Development](#development)
 - [Contributing](#contributing)
-- [Support](#support)
 - [Contributors](#contributors)
-- [Sponsors](#sponsors)
 - [Licenses](#licenses)
 
 ## Why Sakutto
@@ -298,20 +296,6 @@ Issues are welcome, and pull requests are very welcome. Open an [Issue](https://
 - [SECURITY.md](SECURITY.md)
 - [docs/TRANSLATING.md](docs/TRANSLATING.md) for interface translations
 
-## Support
-
-There is no monetisation point in Sakutto. It is completely free, with no ads and no paid features.
-
-I started it because I wanted a translation extension like this myself, and I published it because it turned out to be needed by more people than I expected. I have no plans to charge for it or to add ads.
-
-Continuing development still takes time and money, so I opened GitHub Sponsors. If you like Sakutto, I would be glad of your support.
-
-- **$5 a month (Supporter)**: a plan for cheering on Sakutto's ongoing development.
-- **$10 a month (Backer)**: for anyone who wants to back it further. The amount changes nothing about the software.
-- **One-time**: any amount, once, if a subscription is more than you need.
-
-Neither tier adds limited features or priority support. The money goes towards new features, translation quality and speed, and ongoing maintenance. Whether you sponsor or not, Sakutto stays completely free and open source. <https://github.com/sponsors/jammaru>
-
 ## Contributors
 
 Thank you to everyone who has contributed to Sakutto. Issues and pull requests are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
@@ -321,18 +305,6 @@ Thank you to everyone who has contributed to Sakutto. Issues and pull requests a
 <a href="https://github.com/TKY-27"><img src="https://github.com/TKY-27.png?size=120" width="60" height="60" alt="TKY-27" title="TKY-27"></a>
 <a href="https://github.com/4ltena"><img src="https://github.com/4ltena.png?size=120" width="60" height="60" alt="4ltena" title="4ltena"></a>
 <a href="https://github.com/kiyoka"><img src="https://github.com/kiyoka.png?size=120" width="60" height="60" alt="kiyoka" title="kiyoka"></a>
-
-## Sponsors
-
-Thank you to everyone sponsoring Sakutto. Your support keeps development going.
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/jammaru)
-
-<a href="https://github.com/hykw"><img src="https://github.com/hykw.png?size=120" width="60" height="60" alt="hykw" title="hykw"></a>
-
-<!-- Maintainer: add sponsor avatars below, one per line, for example:
-<a href="https://github.com/USER"><img src="https://github.com/USER.png" width="60" alt="USER"></a>
--->
 
 ## Licenses
 

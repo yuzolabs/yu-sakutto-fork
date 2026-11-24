@@ -25,9 +25,7 @@ PLaMo が対応する 53 言語では、訳文はすべて PLaMo が生成しま
 - [権限](#権限)
 - [開発](#開発)
 - [貢献](#貢献)
-- [支援](#支援)
 - [コントリビューター](#コントリビューター)
-- [スポンサー](#スポンサー)
 - [ライセンス](#ライセンス)
 
 ## Sakutto を選ぶ理由
@@ -296,20 +294,6 @@ Issue は歓迎です。pull request はとても歓迎します。まず [Issue
 - [SECURITY.md](SECURITY.md)
 - 画面の翻訳は [docs/TRANSLATING.ja.md](docs/TRANSLATING.ja.md)
 
-## 支援
-
-Sakutto にマネタイズポイントはありません。完全無料で、広告も有料機能もありません。
-
-そもそも自分がこういう翻訳拡張機能を欲しいと思って作り始めたもので、ありがたいことに思った以上に需要がありそうだったので公開しました。今後も有料化や広告の導入は考えていません。
-
-ただ、継続的に開発していくには時間もコストもかかるので、今回 GitHub Sponsors を開設しました。もし Sakutto を気に入っていただけたら、開発を支援していただけると嬉しいです。
-
-- **月 5 ドル（Supporter）**: Sakutto の継続的な開発を応援していただくプランです。
-- **月 10 ドル（Backer）**: さらに応援していただける方向けのプランです。支援額による機能の違いはありません。
-- **1 回のみ**: 継続的な支払いが不要な場合は、任意の金額を 1 回だけ送れます。
-
-どちらのプランも限定機能や優先サポートはありません。いただいた支援は、新機能の追加や翻訳品質・速度の改善、継続的なメンテナンスに役立てます。もちろん、支援の有無に関係なく、これからも完全無料で使える OSS として開発を続けていきます。 <https://github.com/sponsors/jammaru>
-
 ## コントリビューター
 
 Sakutto にご貢献いただいた皆さん、ありがとうございます。Issue や pull request はとても歓迎しています。詳しくは [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md) をご覧ください。
@@ -319,18 +303,6 @@ Sakutto にご貢献いただいた皆さん、ありがとうございます。
 <a href="https://github.com/TKY-27"><img src="https://github.com/TKY-27.png?size=120" width="60" height="60" alt="TKY-27" title="TKY-27"></a>
 <a href="https://github.com/4ltena"><img src="https://github.com/4ltena.png?size=120" width="60" height="60" alt="4ltena" title="4ltena"></a>
 <a href="https://github.com/kiyoka"><img src="https://github.com/kiyoka.png?size=120" width="60" height="60" alt="kiyoka" title="kiyoka"></a>
-
-## スポンサー
-
-Sakutto を支援してくださっているスポンサーの皆さん、ありがとうございます。いただいた支援は開発の継続に役立てています。
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/jammaru)
-
-<a href="https://github.com/hykw"><img src="https://github.com/hykw.png?size=120" width="60" height="60" alt="hykw" title="hykw"></a>
-
-<!-- メンテナー向け: スポンサーのアバターをここに追加してください。1 行に 1 人、記入例:
-<a href="https://github.com/USER"><img src="https://github.com/USER.png" width="60" alt="USER"></a>
--->
 
 ## ライセンス
 
