@@ -119,7 +119,7 @@ test.describe('built extension', () => {
           await details.locator('summary').click();
           await expect(details.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute(
             'href',
-            'https://jammaru.com/sakutto/privacy/',
+            'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/PRIVACY.md',
           );
           await expect(details.getByRole('link', { name: 'Source code' })).toHaveAttribute(
             'href',
@@ -131,7 +131,7 @@ test.describe('built extension', () => {
           await expect(page.getByRole('heading', { name: 'Import a model file' })).toHaveCount(0);
           await expect(page.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute(
             'href',
-            'https://jammaru.com/sakutto/privacy/',
+            'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/PRIVACY.md',
           );
           await expect(page.getByRole('link', { name: 'Source code' })).toHaveAttribute(
             'href',
@@ -265,7 +265,7 @@ test.describe('built extension', () => {
           await details.locator('summary').click();
           await expect(details.getByRole('link', { name: 'プライバシーポリシー' })).toHaveAttribute(
             'href',
-            'https://jammaru.com/sakutto/privacy/',
+            'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/PRIVACY.md',
           );
           await expect(details.getByRole('link', { name: 'ソースコード' })).toHaveAttribute(
             'href',
@@ -285,7 +285,7 @@ test.describe('built extension', () => {
           ).toHaveCount(0);
           await expect(page.getByRole('link', { name: 'プライバシーポリシー' })).toHaveAttribute(
             'href',
-            'https://jammaru.com/sakutto/privacy/',
+            'https://github.com/yuzolabs/yu-sakutto-fork/blob/main/PRIVACY.md',
           );
           await expect(page.getByRole('link', { name: 'ソースコード' })).toHaveAttribute(
             'href',

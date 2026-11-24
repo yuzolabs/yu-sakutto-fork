@@ -542,7 +542,9 @@ describe('locale messages', () => {
 
   /**
    * The privacy policy and the source repository are the extension's own pages, so both
-   * screens that already link outward point at the same two URLs.
+   * screens that already link outward point at the same two URLs. The policy has to live in
+   * this repository: upstream's page does not describe what this fork does, and this
+   * repository cannot edit it.
    */
   it('links the privacy policy and the source from both pages', () => {
     for (const file of [
@@ -556,7 +558,7 @@ describe('locale messages', () => {
     }
     expect(en.privacyPolicyLink?.message).toBeTruthy();
     expect(ja.sourceCodeLink?.message).toBeTruthy();
-    expect(PROJECT_LINKS.privacy).toMatch(/^https:\/\//);
+    expect(PROJECT_LINKS.privacy.startsWith(`${PROJECT_LINKS.source}/`)).toBe(true);
     expect(PROJECT_LINKS.source).toMatch(/^https:\/\/github\.com\//);
   });
 

@@ -6,7 +6,7 @@ Sakutto is MIT-licensed. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Please fol
 
 The usual path is an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue. That sequence is fully welcome. If you can, a PR is very much wanted. An Issue by itself is also totally welcome — you do not have to write code. Small PRs are enough: a typo, one locale, a docs fix, or a narrow bug fix.
 
-Questions are often faster in [Discord](https://discord.gg/pdSRBaSr38). Do not paste private page content, credentials, or personal data into issues or pull requests. Security issues: [SECURITY.md](SECURITY.md).
+Send usage questions to the [Question issue form](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose). Do not paste private page content, credentials, or personal data into issues or pull requests. Security issues: [SECURITY.md](SECURITY.md).
 
 `help wanted` means outside help is wanted. `good first issue` is a small, well-scoped task. Either label is an invitation to open a PR.
 

@@ -6,7 +6,7 @@ Sakutto は MIT です。[LICENSE](LICENSE) と [NOTICE](NOTICE) を参照して
 
 まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、その Issue に対して pull request を出す、という順を歓迎します。できるなら PR をとても歓迎します。Issue だけでも十分です。コードを書かなくても構いません。小さな PR で足ります。誤字、1 つの言語、ドキュメント、範囲の狭い修正で構いません。
 
-使い方の質問は [Discord](https://discord.gg/pdSRBaSr38) の方が早いことがあります。Issue や pull request に、非公開ページの本文、認証情報、個人情報を貼らないでください。脆弱性は [SECURITY.md](SECURITY.md) です。
+使い方の質問は [質問の Issue フォーム](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose) に送ってください。Issue や pull request に、非公開ページの本文、認証情報、個人情報を貼らないでください。脆弱性は [SECURITY.md](SECURITY.md) です。
 
 `help wanted` は外部の助けを求めている印です。`good first issue` は小さくて着手しやすい課題です。どちらも PR を歓迎する印です。
 

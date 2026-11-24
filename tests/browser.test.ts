@@ -17,7 +17,7 @@ describe('browser build flags', () => {
   });
 
   it('pins a gecko id and a JSPI-era minimum Firefox', () => {
-    expect(FIREFOX_EXTENSION_ID).toBe('sakutto@jammaru');
+    expect(FIREFOX_EXTENSION_ID).toBe('sakutto@yuzolabs');
     expect(FIREFOX_STRICT_MIN_VERSION).toBe('153.0');
   });
 
