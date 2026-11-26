@@ -729,6 +729,66 @@ finished that page and the next two on WebGPU (two runs).
   NaN, and in a skipped tile it no longer does.
 - The Docker build and Firefox, as for `0010`.
 
+## Safe UTF-8 in streamed results
+
+`0017-get-result-safe-utf8.patch` changes `action_get_result` in `cpp/wllama-context.h`.
+
+A generated token can hold a byte that is not valid UTF-8 on its own. PLaMo 3 Translate has
+256 byte-fallback tokens, listed as `<0x80>` through `<0xFF>` and then `<0x00>` through `<0x7F>`
+(token ids 128 to 511); while translating an X article the model picked `<0xA2>` (id 162) right
+after "Lyria 3 Pro / 3.5". llama.cpp's server only holds back a character cut off at the end of
+the generated text (`validate_utf8` in `tools/server/server-common.cpp` checks the last four bytes
+for a lead byte lacking its continuation bytes), so a lone continuation byte enters the partial
+result. `dump()` then threw `[json.exception.type_error.316] invalid UTF-8 byte at index 0: 0xA2`.
+
+### What the patch changes
+
+`res.data_json.value = result ? data_json.dump() : "";` becomes
+`res.data_json.value = result ? safe_json_to_str(data_json) : "";`. `safe_json_to_str()` is what
+the llama.cpp HTTP server uses to serialize the same results (`tools/server/server-common.cpp`);
+it writes U+FFFD in place of each byte that is not valid UTF-8 instead of throwing.
+
+Sakutto does not treat U+FFFD specially: no output check looks for it, so a replacement character
+passes into the translated text and is shown on the page. The degenerate-output checks look for
+repeated pieces and are not triggered by one replacement character in a paragraph.
+
+Patch `0017` is the `get_result` part of ngxson/wllama#376, applied to the pinned source `d275dac`
+(the tokenize and detokenize actions that commit also changed do not exist at the pin).
+`tests/wllama-build.test.ts` checks the content of the patch, and `scripts/wllama/build.ts`
+checks a marker line after applying the patches.
+
+### Measurements (2026-11-27)
+
+Measured on Windows 11 in BrowserOS neo (Chromium 155, an NVIDIA GPU of the lovelace
+generation with `shader-f16` and subgroups of 32, 24 logical cores) with PLaMo 3 Translate 0.8B
+Q4_K_M. Both wasm builds (JSPI/memory64 and compat) compiled in Docker with
+`emscripten/emsdk:4.0.20`; `pnpm verify:wllama` passed, and `pnpm wllama:check` applied all 18
+patches.
+
+On a local COOP/COEP test page running the real model with `logit_bias: {"162": 100}` at
+temperature 0 (object form), the previous build (`0001`–`0016`) failed every request with
+`type_error.316`. In the new build (`0001`–`0018`), all requests finished, the one made to start
+with `<0xA2>` returned twelve U+FFFD, the others returned their normal text, and the native log
+showed no error; see the table under patch `0018` below.
+
+In an unpacked build of this tree with X body translation on,
+`https://x.com/GeekCatX/status/2125933350330515724` translated to the end with the new build: 118
+of 118 blocks, state `translated` 23 s after page load, 211.9 tok/s at the end (the WebGPU tier's
+aggregate rate; the CPU tier runs one sequence near 43 tok/s, see the `0003` section). The
+paragraph that used to stop after "Lyria 3 Pro / 3.5" now reads "3.5", one U+FFFD, then
+"軌作曲）と合わせて、…". Loaded again afterwards, the previous build translated the page a second
+time without meeting the byte: either that paragraph came from the translation cache of the first
+run or the requests were composed differently and the model did not pick the byte, so the page
+is not a deterministic reproduction — the test page with `logit_bias` is.
+
+### What was not measured
+
+- The compat (asyncify) wasm in a browser; it was compiled from the same sources, but no browser
+  without JSPI was run.
+- Firefox, and any GPU other than the NVIDIA card above.
+- `engine:status` during the extension run: the automation could not open extension pages, so the
+  backend is read from the rate and the absence of a restart, not from the status message.
+
 ## Compatibility builds
 
 `needCompat()` (missing JSPI or memory64) selects the compat files automatically. The compat build

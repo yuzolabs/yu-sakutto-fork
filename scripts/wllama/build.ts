@@ -113,6 +113,7 @@ const PATCH_MARKERS: ReadonlyArray<readonly [string, string]> = [
     'llama.cpp/tools/server/server-context.cpp',
     'task->is_stateless() || !task->params.cache_prompt',
   ],
+  ['cpp/wllama-context.h', 'res.data_json.value = result ? safe_json_to_str(data_json) : "";'],
 ];
 
 /**

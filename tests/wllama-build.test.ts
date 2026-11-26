@@ -346,4 +346,20 @@ bool ggml_webgpu_correctness_probe(webgpu_context ctx) {
     expect(patch).not.toContain('wgsl_flash_attn_vec');
     expect(patch).not.toContain('use_sg_matrix');
   });
+
+  it('serializes a result with an invalid UTF-8 byte replaced instead of thrown', () => {
+    const patch = readFileSync(
+      new URL('../scripts/wllama/patches/0017-get-result-safe-utf8.patch', import.meta.url),
+      'utf8',
+    );
+    // the serializer the llama.cpp HTTP server uses for the same results: U+FFFD per bad byte
+    expect(patch).toContain(
+      '+    res.data_json.value = result ? safe_json_to_str(data_json) : "";',
+    );
+    expect(patch).toContain('-    res.data_json.value = result ? data_json.dump() : "";');
+    // it is the one line of get_result that leaves the result; the polling change above it stays
+    expect(patch.match(/^@@ /gm)).toHaveLength(1);
+    expect(patch).not.toContain('run_loop()');
+    expect(patch).not.toContain('get_next_result');
+  });
 });
