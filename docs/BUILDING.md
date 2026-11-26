@@ -3,8 +3,8 @@
 The extension runs PLaMo 3 Translate with a pinned wllama build. The published npm package
 (`@wllama/wllama` 3.8.1) cannot load the PLaMo 3 tokenizer, so the extension ships its own build of
 [ngxson/wllama](https://github.com/ngxson/wllama) at commit `d275dac` (llama.cpp `5aeac37`,
-2026-10-18) with two MV3 patches, one build-flag patch, two run-time patches, a Dawn
-download retry, and two WebGPU adapter/device patches.
+2026-10-18). The patches in `scripts/wllama/patches/` cover MV3 loading, build flags, request
+state, WebGPU device and shader behaviour, and the handling of results and failed actions.
 
 ## Requirements
 
@@ -788,6 +788,65 @@ is not a deterministic reproduction — the test page with `logit_bias` is.
 - Firefox, and any GPU other than the NVIDIA card above.
 - `engine:status` during the extension run: the automation could not open extension pages, so the
   backend is read from the rate and the absence of a restart, not from the status message.
+
+## Error responses for failed actions
+
+`0018-failed-action-error-response.patch` is ngxson/wllama#343, applied to the pinned source.
+Together with patch `0017`, the upstream fixes are already in place here, so upstream does not
+need a separate report for this failure.
+
+Before, `wllama_action` logged the exception and returned a null pointer without writing the
+response length. The worker read the length from the first four bytes of the request, where the
+protocol's magic number `0x45554C47` (1163217991) still sat, and tried to build a view of
+1163217991 bytes. That `RangeError` went through `handleError` as a `signal.abort`, and the main
+thread rejected every queued and waiting task with `WllamaRuntimeError` (`RuntimeError`). With
+sixteen requests streaming, one bad request failed all sixteen, and `isRuntimeDead` in
+`src/engine/in-browser/runtime.ts` reads that `RuntimeError` as a dead runtime and reports a lost
+GPU, moving the model to the CPU.
+
+### What the patch changes
+
+In `cpp/wllama.cpp`, the `catch` of `wllama_action` now answers with `glue_msg_error` (`erro_evt`,
+already defined in `cpp/glue.hpp`) carrying the exception text and writes the response length like
+a normal answer, keeping the null pointer only when even that answer cannot be built. In
+`src/worker.ts`, `wllamaAction` turns an `erro_evt` result into
+`throw new WllamaError(parsedResult.message, 'inference_error')`. In
+`src/workers-code/llama-cpp.js`, when `outputPtr` is null, `runAction` posts
+`{ callbackId, err: 'Action "<name>" failed, see the native log' }` and returns so `handleError`
+(`signal.abort`) is not reached.
+
+Only the call that failed rejects, with a typed `WllamaError`. wllama's `getResponse` cancels the
+request in its `finally` to release its slot, the other requests keep streaming, and the backend
+stays on WebGPU. No Sakutto source changed: `isRuntimeDead` already treats a typed `WllamaError`
+as a live runtime and only a string or a `RuntimeError` as dead.
+
+`tests/wllama-build.test.ts` checks the patch content and runs the pinned worker call queue and
+action runner against a fake wasm: unpatched, a null pointer posts `signal.abort` with
+`RangeError: Invalid typed array length: 1163217991`; with the `0018` hunk applied via
+`git apply`, the same call posts `err` for its own callback id only and the next queued call
+completes. `scripts/wllama/build.ts` checks a marker line of each new hunk after applying patches.
+
+### Measurements (2026-11-27)
+
+Same environment and builds as for `0017`. On the local COOP/COEP test page (WebGPU = 16 slots, 8
+threads, `n_ctx` 16384, `"using device WebGPU"`, `"offloaded 17/17 layers to GPU"`; CPU = 1 slot,
+8 threads):
+
+| Build                | Backend | Streaming requests (sixteen on WebGPU, one on CPU), one made to start with `<0xA2>`                                                                                                                                                              | A wrong-type `get_result` action while requests stream (sixteen on WebGPU, one on CPU)                                                 |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| previous (0001–0016) | WebGPU  | 0 of 16 finish. Log shows `[json.exception.type_error.316] invalid UTF-8 byte at index 0: 0xA2` then `RangeError: Invalid typed array length: 1163217991`, and every request rejects with `RuntimeError: Invalid typed array length: 1163217991` | 0 of 16 finish; the action rejects with the same `RuntimeError`                                                                        |
+| previous (0001–0016) | CPU     | 0 of 1 finish, same two log lines and the same rejection                                                                                                                                                                                         | 0 of 1 finish, same                                                                                                                    |
+| new (0001–0018)      | WebGPU  | 16 of 16 finish; the biased one returns twelve U+FFFD; no native error line                                                                                                                                                                      | 16 of 16 finish; the action alone rejects with a `WllamaError` of type `inference_error`: `Prototype ID mismatch cncl_req != gres_req` |
+| new (0001–0018)      | CPU     | 1 of 1 finishes, twelve U+FFFD, no native error line                                                                                                                                                                                             | 1 of 1 finishes, the same `WllamaError`                                                                                                |
+
+In both builds a plain completion after each run still returned text: the worker process stayed
+alive. What failed in the previous build was every request in flight on the main thread, which
+Sakutto reads as a lost GPU.
+
+### What was not measured
+
+As for `0017`: the compat wasm in a browser, Firefox, any other GPU, and `engine:status` during
+the extension run.
 
 ## Compatibility builds
 

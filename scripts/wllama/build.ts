@@ -114,6 +114,9 @@ const PATCH_MARKERS: ReadonlyArray<readonly [string, string]> = [
     'task->is_stateless() || !task->params.cache_prompt',
   ],
   ['cpp/wllama-context.h', 'res.data_json.value = result ? safe_json_to_str(data_json) : "";'],
+  ['cpp/wllama.cpp', 'glue_msg_error err;'],
+  ['src/worker.ts', "if (parsedResult._name === 'erro_evt') {"],
+  ['src/workers-code/llama-cpp.js', 'if (!Number(outputPtr)) {'],
 ];
 
 /**
