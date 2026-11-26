@@ -775,6 +775,13 @@ Firefox job runs `pnpm zip:firefox`, `web-ext lint` (0 errors), and a second bui
   `core.autocrlf=false` in the checkout before fetching and checks the patch targets out as LF. A
   checkout created by an older version of the script can still hold CRLF files; delete
   `vendor/wllama/.checkout` and retry.
+- `error: unable to create file tools/ui/…: Filename too long` (or `unable to unlink old` under
+  `tools/ui/`) on Windows: `vendor/wllama/.checkout/llama.cpp/…` exceeded the 260-character
+  `MAX_PATH` limit in a deep directory or a worktree with a long branch name while checking out
+  llama.cpp's unused web UI. The build script now passes `core.longpaths=true` to every git call
+  (including the submodule clone and checkout), so running the command again repairs a checkout
+  made before this change; if that still fails, delete `vendor/wllama/.checkout` (it is only a
+  cache) and run it once more.
 - An old `vendor/wllama/checkout` directory is no longer used. Delete it so `svelte-check` does not
   crawl the upstream Svelte examples.
 - On Apple Silicon and Windows on ARM the script uses the `4.0.20-arm64` emsdk tag.

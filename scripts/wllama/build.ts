@@ -115,15 +115,23 @@ const PATCH_MARKERS: ReadonlyArray<readonly [string, string]> = [
   ],
 ];
 
+/**
+ * `core.longpaths` lets the llama.cpp submodule check out on a Windows host whose checkout
+ * path is longer than MAX_PATH (a worktree with a long branch name, for example).
+ */
+const GIT_CONFIG_ARGS = [
+  'core.hooksPath=',
+  'core.autocrlf=false',
+  'core.eol=lf',
+  'core.longpaths=true',
+];
+
 function git(args: readonly string[], cwd = CHECKOUT_DIR): Promise<string> {
-  return run(
-    'git',
-    ['-c', 'core.hooksPath=', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf', ...args],
-    {
-      cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    },
-  );
+  const config = GIT_CONFIG_ARGS.flatMap((setting) => ['-c', setting]);
+  return run('git', [...config, ...args], {
+    cwd,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
 }
 
 async function ensureCheckout(): Promise<void> {
