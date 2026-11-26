@@ -1611,7 +1611,11 @@ export class PageSession {
         item.model.block.setAttribute('data-sakutto-pending', '1');
       }
       const pieces = expandSource(item);
-      const preserve = item.failures > 0 && item.partText.length === pieces.length;
+      // A retry after a failure, or a request restarted after an abort, keeps the pieces that
+      // already finished and asks only for the rest.
+      const preserve =
+        item.partText.length === pieces.length &&
+        (item.failures > 0 || item.partFinal.some(Boolean));
       item.partFinal = pieces.map((_, index) =>
         preserve ? item.partFinal[index] === true : false,
       );
@@ -2120,11 +2124,20 @@ export class PageSession {
           continue;
         }
         item.state = 'idle';
+        item.model?.block.removeAttribute('data-sakutto-pending');
+        // A block the session no longer tracks has nothing left to translate.
+        if (requeue && this.active && !this.navigating && this.live.get(item.id) === item) {
+          // Pieces that already finished stay, so the restarted request asks only for the rest
+          // instead of sending text the engine has already translated.
+          item.partText = item.partText.map((text, index) =>
+            item.partFinal[index] === true ? text : '',
+          );
+          this.enqueue(item);
+          continue;
+        }
         item.partText = [];
         item.partFinal = [];
         item.partError = [];
-        item.model?.block.removeAttribute('data-sakutto-pending');
-        if (requeue && this.active && !this.navigating) this.enqueue(item);
       }
     }
     if (released) this.pump();
@@ -2560,17 +2573,22 @@ export class PageSession {
     });
   }
 
+  /**
+   * Forgets the blocks the page took out of the document and stops only the requests that
+   * carry one of them. Requests for blocks still on the page keep running. A list that
+   * unmounts rows when the height above them changes (X's replies beside a photo, under a
+   * long post whose streamed translation keeps resizing it) would otherwise restart that
+   * post every time a row went away, so the post could translate the same text forever.
+   */
   private forgetDisconnected(): void {
-    let running = false;
+    const gone = new Set<Live>();
     for (const [block, item] of this.liveByBlock) {
-      if (block.isConnected) continue;
-      if (item.state === 'running') running = true;
+      if (!block.isConnected) gone.add(item);
     }
-    if (running) this.abortRunning(true);
-    for (const [block, item] of [...this.liveByBlock]) {
-      if (block.isConnected) continue;
-      this.forgetLive(item, false);
-    }
+    if (gone.size === 0) return;
+    // Forget first, so the aborted requests do not put the removed blocks back in the queue.
+    for (const item of gone) this.forgetLive(item, false);
+    this.abortBatches((batch) => batch.items.some((item) => gone.has(item)), true);
   }
 
   private scheduleScan(): void {
