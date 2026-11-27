@@ -70,7 +70,8 @@ export function isChromeBlock(block: Element): boolean {
   return true;
 }
 
-const HEADING = /^h[1-6]$/u;
+/** `h1`–`h6` by local name, in either case: an XML page may spell the tag `<H1>`. */
+const HEADING = /^h[1-6]$/iu;
 /** The length at which `contentKind` already reads an untagged block as prose. */
 const PARAGRAPH_CHARS = 80;
 
@@ -83,7 +84,20 @@ export function isMetadataBlock(block: Element): boolean {
   return block.closest(METADATA_SELECTOR) !== null;
 }
 
-export function contentKind(block: Element): ContentKind {
+/**
+ * `prose` for text the reader came to read, `chrome` for the navigation, controls and
+ * metadata that wait behind it.
+ *
+ * A block found inside a scope root is prose whatever its tag or length. The scope has
+ * already chosen that root as the text to translate, and the length rule exists to hold back
+ * the labels of a page's interface, not to sort one chosen paragraph behind another. X
+ * Articles show why that matters: their reader is a Draft.js view that renders every
+ * paragraph as a `div`, so under the length rule each short paragraph and every heading
+ * waited behind every long paragraph further down the page, and the opening of the article
+ * was translated last.
+ */
+export function contentKind(block: Element, scopeRoot?: Element): ContentKind {
+  if (scopeRoot !== undefined) return 'prose';
   if (isChromeBlock(block) || isMetadataBlock(block)) return 'chrome';
   const tag = block.tagName.toLowerCase();
   if (PROSE_TAGS.has(tag)) return 'prose';
@@ -92,6 +106,26 @@ export function contentKind(block: Element): ContentKind {
     return 'prose';
   }
   return 'chrome';
+}
+
+/**
+ * True when a block is a heading: the element itself is `h1`–`h6`, or, inside a scope, so
+ * is one of its ancestors up to the scope root.
+ *
+ * The walker yields the element that holds the text, which is not always the heading element.
+ * In Draft.js, the editor behind X Articles, the text of a heading sits in a `div` under the
+ * `h1`, and that `div` is the block. Read by its tag alone such a heading was not one: it was
+ * packed into a request with the paragraphs around it instead of going alone like every other
+ * heading. The walk stops at the scope root, because what surrounds the chosen text belongs
+ * to the page.
+ */
+export function isHeadingBlock(block: Element, scopeRoot?: Element): boolean {
+  if (scopeRoot === undefined) return HEADING.test(block.localName);
+  for (let node: Element | null = block; node; node = node.parentElement) {
+    if (HEADING.test(node.localName)) return true;
+    if (node === scopeRoot) return false;
+  }
+  return false;
 }
 
 export function bandForRect(

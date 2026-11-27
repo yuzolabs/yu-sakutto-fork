@@ -64,6 +64,7 @@ import { assessTranslation, stripPlaceholderTokens } from './placeholders';
 import {
   bandForRect,
   contentKind,
+  isHeadingBlock,
   lookaheadScreens,
   translationConcurrencyFor,
   translationPriority,
@@ -1310,9 +1311,11 @@ export class PageSession {
       flatten: false,
       attempts: 0,
       failures: 0,
-      heading: /^H[1-6]$/u.test(block.tagName),
+      // Inside a scope every block is body copy, and a heading is read from the scope root
+      // down: an X Article keeps the text of a heading in a `div` under the `h1`.
+      heading: isHeadingBlock(block, scopeRoot),
       solo: model.source.includes('\n'),
-      kind: contentKind(block),
+      kind: contentKind(block, scopeRoot),
       lang: languageOf(block, fallback, model.source, scopeRoot),
       index,
       band: bandForRect(block.getBoundingClientRect(), viewportHeight(block)),

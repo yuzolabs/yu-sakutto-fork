@@ -19,8 +19,11 @@
   <body>
     <!--
       Synthetic X Article page. The element structure follows x.com's article reader: a title,
-      the author row, the read-only rich-text body whose blocks are `[data-block]`, media
-      sections with captions, and the follow card at the end. Every name and text is made up.
+      the author row, and a read-only rich-text body (a Draft.js view) whose paragraphs,
+      headings, list items and image captions are each a `[data-block]` element with the text
+      of the block in one `public-DraftStyleDefault-block` div inside it. The media sections
+      are `[data-block]` too and are left out of the translation. The follow card comes last.
+      Every name and text is made up.
     -->
     <main role="main">
       <article role="article" tabindex="-1" data-testid="twitterArticleReadView">
@@ -47,105 +50,164 @@
           </div>
           <div data-testid="twitterArticleRichTextView">
             <div>
-              <div>
-                <div
-                  aria-describedby="placeholder-fixture"
-                  contenteditable="false"
-                  data-testid="longformRichTextComponent"
-                  spellcheck="false"
-                >
-                  <div data-contents="true">
-                    <div data-block="true" data-editor="fixture" data-offset-key="a-0-0">
-                      <div data-offset-key="a-0-0">
-                        <span data-offset-key="a-0-0"
-                          ><span data-text="true"
-                            >Running a translation model locally keeps your text on the
-                            device.</span
-                          ></span
-                        >
-                      </div>
-                    </div>
-                    <h2 data-block="true" data-editor="fixture" data-offset-key="b-0-0">
-                      <div data-offset-key="b-0-0">
-                        <span data-offset-key="b-0-0"
-                          ><span data-text="true">Why it matters</span></span
-                        >
-                      </div>
-                    </h2>
-                    <ul>
-                      <li data-block="true" data-editor="fixture" data-offset-key="c-0-0">
-                        <div data-offset-key="c-0-0">
-                          <span data-offset-key="c-0-0"
-                            ><span data-text="true">Nothing leaves the browser.</span></span
-                          >
-                        </div>
-                      </li>
-                      <li data-block="true" data-editor="fixture" data-offset-key="d-0-0">
-                        <div data-offset-key="d-0-0">
-                          <span data-offset-key="d-0-0"
-                            ><span data-text="true">It keeps working offline.</span></span
-                          >
-                        </div>
-                      </li>
-                    </ul>
-                    <section
-                      data-block="true"
-                      data-editor="fixture"
-                      data-offset-key="e-0-0"
-                      contenteditable="false"
+              <div
+                aria-describedby="placeholder-fixture"
+                contenteditable="false"
+                data-testid="longformRichTextComponent"
+                spellcheck="false"
+              >
+                <div data-contents="true">
+                  <div
+                    class="longform-unstyled"
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="a-0-0"
+                  >
+                    <div
+                      data-offset-key="a-0-0"
+                      class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"
                     >
-                      <div>
-                        <a
-                          href="/fixture_kappa/article/2001/media/1"
-                          aria-describedby="caption-2001"
-                          role="link"
+                      <span data-offset-key="a-0-0"
+                        ><span data-text="true"
+                          >Running a translation model locally keeps your text on the device.</span
+                        ></span
+                      >
+                    </div>
+                  </div>
+                  <h2
+                    class="longform-header-two"
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="b-0-0"
+                  >
+                    <div
+                      data-offset-key="b-0-0"
+                      class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"
+                    >
+                      <span data-offset-key="b-0-0"
+                        ><span data-text="true">Why it matters</span></span
+                      >
+                    </div>
+                  </h2>
+                  <ul>
+                    <li data-block="true" data-editor="fixture" data-offset-key="c-0-0">
+                      <div
+                        data-offset-key="c-0-0"
+                        class="public-DraftStyleDefault-block public-DraftStyleDefault-list-item public-DraftStyleDefault-ltr"
+                      >
+                        <span data-offset-key="c-0-0"
+                          ><span data-text="true">Nothing leaves the browser.</span></span
                         >
-                          <div aria-label="画像" data-testid="tweetPhoto">
-                            <img alt="画像" src="" />
-                          </div>
-                        </a>
                       </div>
-                      <div id="caption-2001">
-                        <div
-                          aria-describedby="placeholder-caption"
-                          contenteditable="false"
-                          data-testid="longformRichTextComponent"
-                          spellcheck="false"
+                    </li>
+                    <li data-block="true" data-editor="fixture" data-offset-key="d-0-0">
+                      <div
+                        data-offset-key="d-0-0"
+                        class="public-DraftStyleDefault-block public-DraftStyleDefault-list-item public-DraftStyleDefault-ltr"
+                      >
+                        <span data-offset-key="d-0-0"
+                          ><span data-text="true">It keeps working offline.</span></span
                         >
-                          <div data-contents="true">
-                            <div data-block="true" data-editor="caption" data-offset-key="f-0-0">
-                              <div data-offset-key="f-0-0">
-                                <span data-offset-key="f-0-0"
-                                  ><span data-text="true"
-                                    >A laptop running the model without a network.</span
-                                  ></span
-                                >
-                              </div>
+                      </div>
+                    </li>
+                  </ul>
+                  <section
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="e-0-0"
+                    contenteditable="false"
+                  >
+                    <div>
+                      <a
+                        href="/fixture_kappa/article/2001/media/1"
+                        aria-describedby="caption-2001"
+                        role="link"
+                      >
+                        <div aria-label="画像" data-testid="tweetPhoto">
+                          <img alt="画像" src="" />
+                        </div>
+                      </a>
+                    </div>
+                    <div id="caption-2001">
+                      <div
+                        aria-describedby="placeholder-caption"
+                        contenteditable="false"
+                        data-testid="longformRichTextComponent"
+                        spellcheck="false"
+                      >
+                        <div data-contents="true">
+                          <div
+                            class="longform-unstyled"
+                            data-block="true"
+                            data-editor="caption"
+                            data-offset-key="f-0-0"
+                          >
+                            <div
+                              data-offset-key="f-0-0"
+                              class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"
+                            >
+                              <span data-offset-key="f-0-0"
+                                ><span data-text="true"
+                                  >A laptop running the model without a network.</span
+                                ></span
+                              >
                             </div>
                           </div>
                         </div>
                       </div>
-                    </section>
-                    <section
-                      data-block="true"
-                      data-editor="fixture"
-                      data-offset-key="g-0-0"
-                      contenteditable="false"
+                    </div>
+                  </section>
+                  <section
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="g-0-0"
+                    contenteditable="false"
+                  >
+                    <div data-testid="tweetPhoto">
+                      <div data-testid="videoPlayer">
+                        <video aria-label="Embedded video" preload="none"></video>
+                        <span>GIF</span>
+                        <button aria-label="Play video" type="button"></button>
+                      </div>
+                    </div>
+                  </section>
+                  <div
+                    class="longform-unstyled"
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="h-0-0"
+                  >
+                    <div
+                      data-offset-key="h-0-0"
+                      class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"
                     >
-                      <div data-testid="tweetPhoto">
-                        <div data-testid="videoPlayer">
-                          <video aria-label="Embedded video" preload="none"></video>
-                          <span>GIF</span>
-                          <button aria-label="Play video" type="button"></button>
-                        </div>
-                      </div>
-                    </section>
-                    <div data-block="true" data-editor="fixture" data-offset-key="h-0-0">
-                      <div data-offset-key="h-0-0">
-                        <span data-offset-key="h-0-0"
-                          ><span data-text="true">最後の段落は日本語で書かれています。</span></span
-                        >
-                      </div>
+                      <span data-offset-key="h-0-0"
+                        ><span data-text="true">最後の段落は日本語で書かれています。</span></span
+                      >
+                    </div>
+                  </div>
+                  <!--
+                    Long enough to read as prose by length alone. A test moves it far below the
+                    first screen to check that the short blocks above it are translated first.
+                  -->
+                  <div
+                    class="longform-unstyled"
+                    data-block="true"
+                    data-editor="fixture"
+                    data-offset-key="i-0-0"
+                  >
+                    <div
+                      data-offset-key="i-0-0"
+                      class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"
+                    >
+                      <span data-offset-key="i-0-0"
+                        ><span data-text="true"
+                          >A closing paragraph that is long enough to read as prose by its length
+                          alone, the way a whole-page translation ranks a block, so that the order
+                          it is translated in shows whether the short blocks above it are treated
+                          the same.</span
+                        ></span
+                      >
                     </div>
                   </div>
                 </div>
