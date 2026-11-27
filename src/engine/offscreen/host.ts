@@ -611,7 +611,10 @@ export class EngineHost {
     };
     const loadRetryRuntime = (signal: AbortSignal): Promise<LlamaRuntime | null> =>
       cpuRetry.load(signal);
-    const onGpuLost = async (reason: 'lost' | 'degenerate' = 'lost'): Promise<void> => {
+    const onGpuLost = async (
+      reason: 'lost' | 'degenerate' = 'lost',
+      error?: unknown,
+    ): Promise<void> => {
       if (reason === 'degenerate') {
         const next = cpuFallback(selectionState.current);
         if (next && next !== selectionState.current) {
@@ -630,13 +633,17 @@ export class EngineHost {
         return;
       }
       const next = gpuLosses.recordLoss(selectionState.current);
+      const leavesWebGpu = isGpuLoadFallback(selectionState.current, next);
       if (next !== selectionState.current) {
-        if (isGpuLoadFallback(selectionState.current, next)) {
-          this.markGpuFallback('device');
-        }
+        if (leavesWebGpu) this.markGpuFallback('device');
         selectionState.current = next;
       }
-      this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), this.gpuDiagnostic?.error);
+      // The settings diagnostic is what a CPU fallback is explained with, so it keeps the text
+      // the runtime failed with instead of only the reason label.
+      this.gpuDiagnostic = mergeGpuDiagnostic(
+        lastGpuDiagnostic(),
+        leavesWebGpu && error !== undefined ? errorText(error) : this.gpuDiagnostic?.error,
+      );
       await disposeCpuRetry();
       await manager.unload();
     };

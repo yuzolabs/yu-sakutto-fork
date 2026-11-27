@@ -209,4 +209,27 @@ describe('offscreen host after a lost GPU', () => {
     expect(loadedSlots()).toEqual([16, 16, 16, 16]);
     expect(services.selection).toMatchObject({ backend: 'webgpu', nParallel: 16 });
   });
+
+  it('keeps the text the runtime failed with when the GPU losses end on the CPU', async () => {
+    const { host, services } = await openServices();
+
+    failNextCompletion(runtimeError(WASM_ABORT));
+    failNextCompletion(runtimeError(WASM_ABORT));
+    failNextCompletion(runtimeError(WASM_ABORT));
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+    expect((await host.status()).gpuDiagnostic?.error).toBeNull();
+    failNextCompletion(runtimeError('(ABORT) Aborted(device lost)'));
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+
+    expect(loadedSlots()).toEqual([16, 16, 4, 1, 1]);
+    expect(native.instances.at(-1)?.params['n_gpu_layers']).toBe(0);
+    const status = await host.status();
+    expect(status).toMatchObject({
+      backend: 'cpu-wasm',
+      gpuFallback: true,
+      gpuFallbackReason: 'device',
+    });
+    expect(status.gpuDiagnostic?.error).toContain('(ABORT) Aborted(device lost)');
+    expect(status.gpuDiagnostic?.vendor).toBe('nvidia');
+  });
 });

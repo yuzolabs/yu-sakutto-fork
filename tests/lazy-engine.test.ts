@@ -144,6 +144,14 @@ describe('LazyInBrowserEngine after the GPU is lost', () => {
     expect(loadRuntime).toHaveBeenCalledTimes(2);
   });
 
+  it('hands the host the error the GPU was lost with', async () => {
+    const { engine, onGpuLost } = engineOver([dying(), new FakeRuntime(() => 'は')]);
+
+    await collectChunks(engine.translate([a], options()));
+
+    expect(onGpuLost).toHaveBeenCalledWith('lost', expect.objectContaining({ code: 'gpu-lost' }));
+  });
+
   it('starts over the text already streamed from the lost runtime', async () => {
     const { engine } = engineOver([dying(true), new FakeRuntime(() => 'はい')]);
 

@@ -92,6 +92,11 @@ export function isRuntimeDead(error: unknown): boolean {
   return error instanceof Error && error.name === 'RuntimeError';
 }
 
+/** The text wllama rejected a call with, kept as the `detail` of the error Sakutto raises for it. */
+function runtimeFailureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type GpuEvidence = 'engaged' | 'missing' | 'unknown';
 
 let lastWebGpuLines: string[] = [];
@@ -367,7 +372,10 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
           if (isAbortError(error) || request.signal.aborted) throw abortError();
           if (selection.backend === 'webgpu' && isRuntimeDead(error)) {
             reportLoss(error);
-            throw new EngineError('gpu-lost', 'The GPU stopped working.', { cause: error });
+            throw new EngineError('gpu-lost', 'The GPU stopped working.', {
+              cause: error,
+              detail: runtimeFailureText(error),
+            });
           }
           throw new EngineError('model-load-failed', 'The translation request failed.', {
             cause: error,

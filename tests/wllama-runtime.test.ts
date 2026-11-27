@@ -11,6 +11,7 @@ import type { WllamaLogger } from '@/engine/wllama/module';
 const native = vi.hoisted(() => ({
   log: [] as string[],
   loadModel: vi.fn(),
+  createCompletion: vi.fn(),
   exit: vi.fn(async () => undefined),
 }));
 
@@ -20,6 +21,7 @@ vi.mock('@/engine/wllama', () => ({
       await native.loadModel(...args);
       for (const line of native.log) options.logger.log(line);
     }),
+    createCompletion: native.createCompletion,
     exit: native.exit,
   })),
 }));
@@ -30,8 +32,20 @@ const cpu = selectBackend({ webgpu: false, hardwareConcurrency: 8 });
 beforeEach(() => {
   native.log = [];
   native.loadModel.mockReset();
+  native.createCompletion.mockReset();
   native.exit.mockClear();
 });
+
+/** wllama's `WllamaRuntimeError`: every request the worker was running rejects with it. */
+function runtimeError(message: string): Error {
+  const error = new Error(message);
+  error.name = 'RuntimeError';
+  return error;
+}
+
+function completion(signal: AbortSignal = new AbortController().signal) {
+  return { prompt: 'p', maxTokens: 8, signal, onToken: () => undefined };
+}
 
 describe('gpu evidence in the llama.cpp load log', () => {
   it('sees a model that landed on the GPU', () => {
@@ -241,5 +255,15 @@ describe('a dead WASM runtime', () => {
     expect(isRuntimeDead('RuntimeError: Aborted()')).toBe(true);
     expect(isRuntimeDead(new Error('request exceeds the available context size'))).toBe(false);
     expect(isRuntimeDead(undefined)).toBe(false);
+  });
+
+  it('keeps the text the request failed with on the lost-GPU error', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockRejectedValueOnce(runtimeError('(ABORT) Aborted()'));
+
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'gpu-lost',
+      detail: '(ABORT) Aborted()',
+    });
   });
 });

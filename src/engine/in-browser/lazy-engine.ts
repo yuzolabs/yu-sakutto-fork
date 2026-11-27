@@ -25,8 +25,9 @@ export interface LazyInBrowserEngineOptions {
   /**
    * Runs once before the next load. `lost` reloads the same selection the first
    * time. `degenerate` leaves WebGPU after several distinct collapsed pieces.
+   * `error` is the `gpu-lost` error of the request that saw the loss first.
    */
-  onGpuLost?: (reason: 'lost' | 'degenerate') => Promise<void>;
+  onGpuLost?: (reason: 'lost' | 'degenerate', error?: unknown) => Promise<void>;
   config?: InBrowserEngineOptions['config'];
 }
 
@@ -87,17 +88,23 @@ export class LazyInBrowserEngine implements IdentifiedEngine {
         if (!lost || options.signal.aborted || recoveries >= MAX_GPU_RECOVERIES) {
           throw error;
         }
-        await this.recover(engine, 'lost');
+        await this.recover(engine, 'lost', error);
         if (pending.length === 0) return;
       }
     }
   }
 
   /** Every request running on the lost GPU lands here; only the first one does the work. */
-  private recover(lost: InBrowserEngine, reason: 'lost' | 'degenerate'): Promise<void> {
-    if (this.engine === lost && this.options.onGpuLost) {
+  private recover(
+    lost: InBrowserEngine,
+    reason: 'lost' | 'degenerate',
+    error?: unknown,
+  ): Promise<void> {
+    const onGpuLost = this.options.onGpuLost;
+    if (this.engine === lost && onGpuLost) {
       this.reset();
-      this.recovery = this.options.onGpuLost(reason).finally(() => {
+      const leaving = error === undefined ? onGpuLost(reason) : onGpuLost(reason, error);
+      this.recovery = leaving.finally(() => {
         this.recovery = null;
       });
     }
