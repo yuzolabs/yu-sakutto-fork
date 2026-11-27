@@ -142,68 +142,80 @@ function git(args: readonly string[], cwd = CHECKOUT_DIR): Promise<string> {
   });
 }
 
-async function ensureCheckout(): Promise<void> {
-  if (await exists(join(CHECKOUT_DIR, '.git'))) {
-    const origin = await git(['config', '--get', 'remote.origin.url']).catch(() => '');
-    if (origin && origin !== WLLAMA_REPOSITORY) {
+export async function ensureCheckout(targets: {
+  checkoutDir: string;
+  repository: string;
+  wllamaCommit: string;
+  llamaCppCommit: string;
+}): Promise<void> {
+  const { checkoutDir, repository, wllamaCommit, llamaCppCommit } = targets;
+
+  if (await exists(join(checkoutDir, '.git'))) {
+    const origin = await git(['config', '--get', 'remote.origin.url'], checkoutDir).catch(() => '');
+    if (origin && origin !== repository) {
       throw new Error(
-        `${CHECKOUT_DIR} points at ${origin}, expected ${WLLAMA_REPOSITORY}. Remove the directory and retry.`,
+        `${checkoutDir} points at ${origin}, expected ${repository}. Remove the directory and retry.`,
       );
     }
     if (!origin) {
-      await git(['remote', 'add', 'origin', WLLAMA_REPOSITORY]);
+      await git(['remote', 'add', 'origin', repository], checkoutDir);
     }
   } else {
-    await mkdir(CHECKOUT_DIR, { recursive: true });
-    await git(['init', '--quiet']);
-    await git(['remote', 'add', 'origin', WLLAMA_REPOSITORY]);
-    log(`cloned ${WLLAMA_REPOSITORY}`);
+    await mkdir(checkoutDir, { recursive: true });
+    await git(['init', '--quiet'], checkoutDir);
+    await git(['remote', 'add', 'origin', repository], checkoutDir);
+    log(`cloned ${repository}`);
   }
 
-  await git(['config', 'core.autocrlf', 'false']);
-  await git(['config', 'core.eol', 'lf']);
+  await git(['config', 'core.autocrlf', 'false'], checkoutDir);
+  await git(['config', 'core.eol', 'lf'], checkoutDir);
 
-  const head = await git(['rev-parse', 'HEAD']).catch(() => '');
-  if (head !== WLLAMA_COMMIT) {
-    const known = await git(['cat-file', '-e', `${WLLAMA_COMMIT}^{commit}`]).then(
+  const head = await git(['rev-parse', 'HEAD'], checkoutDir).catch(() => '');
+  if (head !== wllamaCommit) {
+    const known = await git(['cat-file', '-e', `${wllamaCommit}^{commit}`], checkoutDir).then(
       () => true,
       () => false,
     );
     if (!known) {
-      log(`fetching ${WLLAMA_COMMIT}`);
+      log(`fetching ${wllamaCommit}`);
       try {
-        await git(['fetch', '--depth', '1', 'origin', WLLAMA_COMMIT]);
+        await git(['fetch', '--depth', '1', 'origin', wllamaCommit], checkoutDir);
       } catch {
-        await git(['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*']);
+        await git(['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*'], checkoutDir);
       }
     }
-    await git(['checkout', '--detach', WLLAMA_COMMIT]);
+    await git(['checkout', '--detach', wllamaCommit], checkoutDir);
   }
 
-  const pinned = await git(['rev-parse', 'HEAD']);
-  if (pinned !== WLLAMA_COMMIT) {
-    throw new Error(`wllama checkout is at ${pinned}, expected ${WLLAMA_COMMIT}`);
+  const pinned = await git(['rev-parse', 'HEAD'], checkoutDir);
+  if (pinned !== wllamaCommit) {
+    throw new Error(`wllama checkout is at ${pinned}, expected ${wllamaCommit}`);
   }
 
-  const linked = await git(['rev-parse', 'HEAD:llama.cpp']);
-  if (linked !== LLAMA_CPP_COMMIT) {
-    throw new Error(
-      `wllama @${WLLAMA_COMMIT} expects llama.cpp ${LLAMA_CPP_COMMIT}, found ${linked}`,
-    );
+  const linked = await git(['rev-parse', 'HEAD:llama.cpp'], checkoutDir);
+  if (linked !== llamaCppCommit) {
+    throw new Error(`wllama @${wllamaCommit} expects llama.cpp ${llamaCppCommit}, found ${linked}`);
   }
 
-  if (!(await exists(join(CHECKOUT_DIR, 'llama.cpp', '.git')))) {
-    log('fetching the llama.cpp submodule');
+  // Without its own .git, rev-parse in llama.cpp would read the superproject's HEAD.
+  const llamaCppDir = join(checkoutDir, 'llama.cpp');
+  let llamaCpp = (await exists(join(llamaCppDir, '.git')))
+    ? await git(['rev-parse', 'HEAD'], llamaCppDir).catch(() => '')
+    : '';
+  // A submodule checkout that failed part way ("Filename too long", for example) leaves
+  // llama.cpp/.git on the clone's default branch, so the update runs again in that state too.
+  if (llamaCpp !== llamaCppCommit) {
+    log(`checking out the llama.cpp submodule @${llamaCppCommit}`);
     try {
-      await git(['submodule', 'update', '--init', '--recursive', '--depth', '1']);
+      await git(['submodule', 'update', '--init', '--recursive', '--depth', '1'], checkoutDir);
     } catch {
-      await git(['submodule', 'update', '--init', '--recursive']);
+      await git(['submodule', 'update', '--init', '--recursive'], checkoutDir);
     }
+    llamaCpp = await git(['rev-parse', 'HEAD'], llamaCppDir);
   }
 
-  const llamaCpp = await git(['rev-parse', 'HEAD'], join(CHECKOUT_DIR, 'llama.cpp'));
-  if (llamaCpp !== LLAMA_CPP_COMMIT) {
-    throw new Error(`llama.cpp checkout is at ${llamaCpp}, expected ${LLAMA_CPP_COMMIT}`);
+  if (llamaCpp !== llamaCppCommit) {
+    throw new Error(`llama.cpp checkout is at ${llamaCpp}, expected ${llamaCppCommit}`);
   }
 }
 
@@ -322,7 +334,12 @@ async function main(): Promise<void> {
     await rm(PUBLIC_DIR, { recursive: true, force: true });
   }
 
-  await ensureCheckout();
+  await ensureCheckout({
+    checkoutDir: CHECKOUT_DIR,
+    repository: WLLAMA_REPOSITORY,
+    wllamaCommit: WLLAMA_COMMIT,
+    llamaCppCommit: LLAMA_CPP_COMMIT,
+  });
   await resetCheckout();
   await applyPatches();
 
