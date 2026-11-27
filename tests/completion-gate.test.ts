@@ -73,6 +73,93 @@ describe('completion gate', () => {
     expect(order).toEqual(['first', 'second']);
   });
 
+  it('runs a lone completion with nothing beside it', async () => {
+    const gate = new CompletionGate(4);
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    let releaseAlone!: () => void;
+    const first = gate.exclusive(
+      () =>
+        new Promise<void>((resolve) => {
+          order.push('first');
+          releaseFirst = resolve;
+        }),
+    );
+    const alone = gate.exclusive(
+      () =>
+        new Promise<void>((resolve) => {
+          order.push('alone');
+          releaseAlone = resolve;
+        }),
+      true,
+    );
+    // Asks after the lone one, so it waits behind it although slots are free.
+    const later = gate.exclusive(async () => {
+      order.push('later');
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(['first']);
+    releaseFirst();
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(['first', 'alone']);
+    releaseAlone();
+    await alone;
+    await later;
+    expect(order).toEqual(['first', 'alone', 'later']);
+  });
+
+  it('starts the waiting completions together after a lone one', async () => {
+    const gate = new CompletionGate(2);
+    let releaseAlone!: () => void;
+    const releases: Array<() => void> = [];
+    let running = 0;
+    const alone = gate.exclusive(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseAlone = resolve;
+        }),
+      true,
+    );
+    const others = [1, 2, 3].map(() =>
+      gate.exclusive(
+        () =>
+          new Promise<void>((resolve) => {
+            running += 1;
+            releases.push(resolve);
+          }),
+      ),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(running).toBe(0);
+    releaseAlone();
+    await alone;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(running).toBe(2);
+    for (const release of releases.splice(0)) release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(running).toBe(3);
+    for (const release of releases.splice(0)) release();
+    await Promise.all(others);
+  });
+
+  it('opens the gate when a lone completion fails', async () => {
+    const gate = new CompletionGate(2);
+    const alone = gate.exclusive(async () => {
+      throw new Error('fail');
+    }, true);
+    let ran = false;
+    const next = gate.exclusive(async () => {
+      ran = true;
+    });
+
+    await expect(alone).rejects.toThrow('fail');
+    await next;
+    expect(ran).toBe(true);
+  });
+
   it('drops tokens that arrive after abort', () => {
     const seen: string[] = [];
     const accept = (text: string): void => {

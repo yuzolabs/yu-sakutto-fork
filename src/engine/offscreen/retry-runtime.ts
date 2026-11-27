@@ -41,6 +41,8 @@ export class CpuRetryRuntimeSlot {
     if (canReuseLoadedRuntimeForRetry(loaded, this.options.activeModelId()) && loaded) {
       return loaded.runtime;
     }
+    // A copy that stopped fails every call; load a new one instead of handing it out again.
+    if (this.runtime?.stopped === true) this.dispose();
     if (this.runtime) return this.runtime;
     const cpu = this.options.cpuSelection();
     if (!cpu) return null;

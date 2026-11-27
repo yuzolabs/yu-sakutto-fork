@@ -4,6 +4,7 @@ import {
   WEBGPU_LOAD_TIMEOUT_MS,
   createWllamaRuntime,
   gpuEvidence,
+  isGpuDeviceLoss,
   isRuntimeDead,
 } from '@/engine/in-browser/runtime';
 import type { WllamaLogger } from '@/engine/wllama/module';
@@ -11,6 +12,8 @@ import type { WllamaLogger } from '@/engine/wllama/module';
 const native = vi.hoisted(() => ({
   log: [] as string[],
   loadModel: vi.fn(),
+  createCompletion: vi.fn(),
+  tokenize: vi.fn(),
   exit: vi.fn(async () => undefined),
 }));
 
@@ -20,6 +23,8 @@ vi.mock('@/engine/wllama', () => ({
       await native.loadModel(...args);
       for (const line of native.log) options.logger.log(line);
     }),
+    createCompletion: native.createCompletion,
+    tokenize: native.tokenize,
     exit: native.exit,
   })),
 }));
@@ -30,8 +35,21 @@ const cpu = selectBackend({ webgpu: false, hardwareConcurrency: 8 });
 beforeEach(() => {
   native.log = [];
   native.loadModel.mockReset();
+  native.createCompletion.mockReset();
+  native.tokenize.mockReset();
   native.exit.mockClear();
 });
+
+/** wllama's `WllamaRuntimeError`: every request the worker was running rejects with it. */
+function runtimeError(message: string): Error {
+  const error = new Error(message);
+  error.name = 'RuntimeError';
+  return error;
+}
+
+function completion(signal: AbortSignal = new AbortController().signal) {
+  return { prompt: 'p', maxTokens: 8, signal, onToken: () => undefined };
+}
 
 describe('gpu evidence in the llama.cpp load log', () => {
   it('sees a model that landed on the GPU', () => {
@@ -241,5 +259,216 @@ describe('a dead WASM runtime', () => {
     expect(isRuntimeDead('RuntimeError: Aborted()')).toBe(true);
     expect(isRuntimeDead(new Error('request exceeds the available context size'))).toBe(false);
     expect(isRuntimeDead(undefined)).toBe(false);
+  });
+
+  it('counts a wasm abort or a failed device as a lost GPU', () => {
+    expect(isGpuDeviceLoss(runtimeError('(ABORT) Aborted()'))).toBe(true);
+    expect(isGpuDeviceLoss(runtimeError('(ABORT) native code called abort()'))).toBe(true);
+    expect(isGpuDeviceLoss('RuntimeError: Aborted()')).toBe(true);
+    expect(isGpuDeviceLoss('wllama has crashed, please reload the module')).toBe(true);
+    expect(
+      isGpuDeviceLoss(runtimeError("Failed to execute 'mapAsync' on 'GPUBuffer': Device is lost")),
+    ).toBe(true);
+    expect(isGpuDeviceLoss(runtimeError('The device was lost.'))).toBe(true);
+    expect(isGpuDeviceLoss(runtimeError('ggml_webgpu: Device lost! Reason: 2'))).toBe(true);
+    expect(isGpuDeviceLoss(runtimeError('DXGI_ERROR_DEVICE_REMOVED'))).toBe(true);
+  });
+
+  it('does not count a JS exception inside the worker as a lost GPU', () => {
+    // What wllama raised for a result with invalid UTF-8 before patch 0018: `signal.abort` of
+    // type `exception`, so the message has no `(ABORT)` prefix.
+    const exception = runtimeError('Invalid typed array length: 1163217991');
+    expect(isRuntimeDead(exception)).toBe(true);
+    expect(isGpuDeviceLoss(exception)).toBe(false);
+    expect(isGpuDeviceLoss(runtimeError("Cannot read properties of null (reading 'buffer')"))).toBe(
+      false,
+    );
+    expect(isGpuDeviceLoss('Action "get_result" failed, see the native log')).toBe(false);
+    expect(isGpuDeviceLoss(new Error('device lost'))).toBe(false);
+  });
+
+  it('keeps the text the request failed with on the lost-GPU error', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockRejectedValueOnce(runtimeError('(ABORT) Aborted()'));
+
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'gpu-lost',
+      detail: '(ABORT) Aborted()',
+    });
+  });
+});
+
+describe('a stopped wllama runtime', () => {
+  const exception = (): Error => runtimeError('Invalid typed array length: 1163217991');
+
+  it('reports a worker exception on WebGPU as a crash, not a lost GPU', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockRejectedValueOnce(exception());
+
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'runtime-crashed',
+      detail: 'Invalid typed array length: 1163217991',
+    });
+    expect(runtime.stopped).toBe(true);
+  });
+
+  it('reports a lost device on WebGPU as a lost GPU', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockRejectedValueOnce(
+      runtimeError("Failed to execute 'mapAsync' on 'GPUBuffer': Device is lost"),
+    );
+
+    await expect(runtime.complete(completion())).rejects.toMatchObject({ code: 'gpu-lost' });
+  });
+
+  it('reports any stop on the CPU as a crash', async () => {
+    for (const error of [exception(), runtimeError('(ABORT) Aborted()')]) {
+      const runtime = await createWllamaRuntime(new Blob(), cpu);
+      native.createCompletion.mockRejectedValueOnce(error);
+
+      await expect(runtime.complete(completion())).rejects.toMatchObject({
+        code: 'runtime-crashed',
+      });
+      expect(runtime.stopped).toBe(true);
+    }
+  });
+
+  it('fails the other requests in flight and every later call', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    let failFirst!: (error: unknown) => void;
+    native.createCompletion
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            failFirst = reject;
+          }),
+      )
+      // A request whose answer never comes, as when the worker is terminated under it.
+      .mockImplementationOnce(() => new Promise<void>(() => undefined));
+
+    const first = runtime.complete(completion());
+    const second = runtime.complete(completion());
+    await vi.waitFor(() => expect(native.createCompletion).toHaveBeenCalledTimes(2));
+    failFirst(exception());
+
+    await expect(first).rejects.toMatchObject({ code: 'runtime-crashed' });
+    await expect(second).rejects.toMatchObject({ code: 'runtime-crashed' });
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+    expect(native.createCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails a CPU request still waiting for the slot without starting it', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), cpu);
+    let failFirst!: (error: unknown) => void;
+    native.createCompletion.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failFirst = reject;
+        }),
+    );
+
+    const first = runtime.complete(completion());
+    const queued = runtime.complete(completion());
+    await vi.waitFor(() => expect(native.createCompletion).toHaveBeenCalledOnce());
+    failFirst(exception());
+
+    await expect(first).rejects.toMatchObject({ code: 'runtime-crashed' });
+    await expect(queued).rejects.toMatchObject({ code: 'runtime-crashed' });
+    expect(native.createCompletion).toHaveBeenCalledOnce();
+  });
+
+  it('records the stop even when the request that saw it was cancelled', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), cpu);
+    const controller = new AbortController();
+    native.createCompletion.mockImplementationOnce(async () => {
+      controller.abort();
+      throw exception();
+    });
+
+    await expect(runtime.complete(completion(controller.signal))).rejects.toMatchObject({
+      code: 'aborted',
+    });
+    expect(runtime.stopped).toBe(true);
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+  });
+
+  it('leaves the runtime running after a failure the model reports', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockRejectedValueOnce(new Error('Prototype ID mismatch'));
+
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'model-load-failed',
+    });
+    expect(runtime.stopped).toBe(false);
+    native.createCompletion.mockResolvedValueOnce(undefined);
+    await expect(runtime.complete(completion())).resolves.toEqual({ hitMaxTokens: false });
+  });
+
+  it('stops counting tokens once the runtime stopped', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), cpu);
+    native.tokenize.mockRejectedValueOnce(exception());
+
+    await expect(runtime.tokenize?.('text')).rejects.toMatchObject({ code: 'runtime-crashed' });
+    expect(runtime.stopped).toBe(true);
+    await expect(runtime.tokenize?.('text')).rejects.toMatchObject({ code: 'runtime-crashed' });
+    expect(native.tokenize).toHaveBeenCalledOnce();
+  });
+
+  it('runs a lone request with nothing beside it and says when it starts', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    let finishFirst!: () => void;
+    native.createCompletion
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+
+    const first = runtime.complete(completion());
+    await vi.waitFor(() => expect(native.createCompletion).toHaveBeenCalledOnce());
+    const onStart = vi.fn();
+    const alone = runtime.complete({ ...completion(), alone: true, onStart });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onStart).not.toHaveBeenCalled();
+    expect(native.createCompletion).toHaveBeenCalledOnce();
+
+    finishFirst();
+    await first;
+    await alone;
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(native.createCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not say a request started when the stopped runtime turned it away', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), cpu);
+    native.createCompletion.mockRejectedValueOnce(exception());
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+
+    const onStart = vi.fn();
+    await expect(runtime.complete({ ...completion(), onStart })).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('ends a request still running when the runtime is disposed', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    native.createCompletion.mockImplementationOnce(() => new Promise<void>(() => undefined));
+
+    const running = runtime.complete(completion());
+    await vi.waitFor(() => expect(native.createCompletion).toHaveBeenCalledOnce());
+    await runtime.dispose();
+
+    await expect(running).rejects.toMatchObject({ code: 'aborted' });
+    expect(runtime.stopped).toBe(true);
+    expect(native.exit).toHaveBeenCalled();
   });
 });

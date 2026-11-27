@@ -44,10 +44,10 @@ import {
   modelChangedError,
 } from '../errors';
 import {
+  GpuLossHistory,
   cpuFallback,
   isGpuLoadFallback,
   lighterSelection,
-  selectionAfterGpuLoss,
   selectionForTier,
   type BackendSelection,
 } from '../in-browser/backend';
@@ -598,7 +598,7 @@ export class EngineHost {
       this.touch();
       return result.loaded;
     };
-    let lastGpuLossAt = Number.NEGATIVE_INFINITY;
+    const gpuLosses = new GpuLossHistory();
     const cpuRetry = new CpuRetryRuntimeSlot({
       create: createWllamaRuntime,
       modelBlob: (modelId) => manager.modelBlob(modelId),
@@ -611,7 +611,10 @@ export class EngineHost {
     };
     const loadRetryRuntime = (signal: AbortSignal): Promise<LlamaRuntime | null> =>
       cpuRetry.load(signal);
-    const onGpuLost = async (reason: 'lost' | 'degenerate' = 'lost'): Promise<void> => {
+    const onGpuLost = async (
+      reason: 'lost' | 'degenerate' = 'lost',
+      error?: unknown,
+    ): Promise<void> => {
       if (reason === 'degenerate') {
         const next = cpuFallback(selectionState.current);
         if (next && next !== selectionState.current) {
@@ -629,20 +632,33 @@ export class EngineHost {
         await manager.unload();
         return;
       }
-      const now = Date.now();
-      const next = selectionAfterGpuLoss(selectionState.current, now - lastGpuLossAt);
-      lastGpuLossAt = now;
+      const next = gpuLosses.recordLoss(selectionState.current);
+      const leavesWebGpu = isGpuLoadFallback(selectionState.current, next);
       if (next !== selectionState.current) {
-        if (isGpuLoadFallback(selectionState.current, next)) {
-          this.markGpuFallback('device');
-        }
+        if (leavesWebGpu) this.markGpuFallback('device');
         selectionState.current = next;
       }
-      this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), this.gpuDiagnostic?.error);
+      // The settings diagnostic is what a CPU fallback is explained with, so it keeps the text
+      // the runtime failed with instead of only the reason label.
+      this.gpuDiagnostic = mergeGpuDiagnostic(
+        lastGpuDiagnostic(),
+        leavesWebGpu && error !== undefined ? errorText(error) : this.gpuDiagnostic?.error,
+      );
       await disposeCpuRetry();
       await manager.unload();
     };
-    const lazy = new LazyInBrowserEngine({ loadRuntime: load, loadRetryRuntime, onGpuLost });
+    // A runtime that stopped without losing the GPU device, such as a JS exception inside the
+    // wllama worker, loads again on the same selection. It is not a lost GPU: it does not count
+    // toward stepping down, and the WebGPU diagnostic stays as it was.
+    const onRuntimeCrash = async (): Promise<void> => {
+      if (manager.loadedModel?.runtime.stopped === true) await manager.unload();
+    };
+    const lazy = new LazyInBrowserEngine({
+      loadRuntime: load,
+      loadRetryRuntime,
+      onGpuLost,
+      onRuntimeCrash,
+    });
     const localRuntime = new LocalServerRuntime(() => this.localConfig);
     this.localScheduler = new JobScheduler(localRuntime.parallel, 'pool');
     const localEngine = new InBrowserEngine(localRuntime, { scheduler: this.localScheduler });
@@ -688,6 +704,8 @@ export class EngineHost {
       clearCache: () => cache.clear(),
       setTier: async (tier: TierPreference) => {
         selectionState.current = selectionForTier(tier, probe);
+        // A loss on the previous tier must not make the first loss on this one step down.
+        gpuLosses.forgetLosses();
         this.gpuFallback = false;
         this.gpuFallbackReason = null;
         this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), null);

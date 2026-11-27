@@ -7,6 +7,7 @@ export type EngineErrorCode =
   | 'model-load-failed'
   | 'gpu-unavailable'
   | 'gpu-lost'
+  | 'runtime-crashed'
   | 'degenerate-output'
   | 'download-failed'
   | 'storage-insufficient'
@@ -54,6 +55,7 @@ const ENGINE_ERROR_CODES: ReadonlySet<string> = new Set<EngineErrorCode>([
   'model-load-failed',
   'gpu-unavailable',
   'gpu-lost',
+  'runtime-crashed',
   'degenerate-output',
   'download-failed',
   'storage-insufficient',
