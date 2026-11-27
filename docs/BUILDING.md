@@ -824,6 +824,40 @@ second loss within 120 s (`GpuLossHistory` in `src/engine/in-browser/backend.ts`
 again forgets earlier losses), and `gpuDiagnostic.error` keeps the runtime's failure text when a
 lost GPU moves the model to the CPU.
 
+Because a crash fails every request running on the runtime without saying which piece caused it,
+resending the same pieces after each restart used to crash every new runtime until
+`MAX_RUNTIME_RESTARTS` (3 per translate call in `src/engine/in-browser/lazy-engine.ts`) ran out
+and failed every piece of that call. To isolate a piece that keeps crashing the worker,
+`LazyInBrowserEngine` holds a `RuntimeCrashLedger` (`src/engine/in-browser/runtime-crash-ledger.ts`)
+and hands it to each `InBrowserEngine` it creates (`crashLedger` option in
+`src/engine/in-browser/engine.ts`), so the ledger outlives the engine across runtime restarts and
+lost-GPU reloads in one session. Every piece that had actually started on the runtime when it
+crashes with `runtime-crashed` becomes a suspect: the runtime reports the start through
+`CompletionRequest.onStart` (`src/engine/in-browser/runtime.ts`), while a request turned away
+because the runtime had already stopped never started and marks nothing, so pieces waiting behind
+the culprit are not blamed. On the next runtime, a suspect runs alone (`InBrowserEngine` sets
+`CompletionRequest.alone`, and `CompletionGate` waits until every running completion finishes and
+keeps other completions waiting while it runs, starting waiting tasks in the order they asked so
+later tasks do not overtake one waiting to run alone). A suspect whose completion finishes is
+cleared; if the runtime crashes while it runs alone, it becomes a culprit and `InBrowserEngine`
+returns its source text marked `error: true` without sending it again (and `CachingEngine` in
+`src/engine/cache/caching-engine.ts` does not store results marked `error: true`), so the other
+pieces are translated as usual after two of the call's three restarts (one with the other running
+pieces and one alone).
+
+The ledger keys each piece by target language, source language, and sanitized source text
+(`runtimeCrashKey` in `src/engine/in-browser/engine.ts`), and each of its two sets (suspects and
+culprits) keeps at most 256 entries (`MAX_LEDGER_ENTRIES`), dropping the oldest. Only
+`runtime-crashed` marks the ledger (`gpu-lost` does not, and lost-GPU recovery keeps it), while
+`LazyInBrowserEngine.reset()`—called by the host on a tier change, a model change, and an idle
+release—clears it so the piece gets another try afterwards. `tests/runtime-crash-ledger.test.ts`,
+`tests/completion-gate.test.ts`, `tests/lazy-engine.test.ts` (describe "LazyInBrowserEngine with a
+piece that crashes the runtime"), and `tests/offscreen-runtime-recovery.test.ts` (describe
+"offscreen host with a paragraph that keeps crashing the runtime") cover the ledger,
+`CompletionGate`'s `alone` ordering, and a persistently crashing paragraph ending with its source
+text and `error: true` while WebGPU stays on 16 slots and asking for it again sends nothing and
+loads nothing.
+
 ### What the patch changes
 
 In `cpp/wllama.cpp`, the `catch` of `wllama_action` now answers with `glue_msg_error` (`erro_evt`,
