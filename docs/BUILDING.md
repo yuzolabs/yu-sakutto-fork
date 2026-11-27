@@ -834,8 +834,10 @@ action runner against a fake wasm: unpatched, a null pointer posts `signal.abort
 completes. `scripts/wllama/build.ts` checks a marker line of each new hunk after applying patches,
 along with two `PATCH_MARKERS` entries for `src/workers-code/llama-cpp.js`
 (`wasmCallQueue.length = 0;` in `runWasmCall`'s `finally` and
-`args: ['exception', message, stack, err],` in `handleError`) so `pnpm wllama:check` fails when a
-pin bump changes the worker code that `tests/wllama-build.test.ts` copies verbatim.
+`args: ['exception', message, stack, err],` in `handleError`). Together with the `0018` hunk's
+context, those two lines make `pnpm wllama:check` fail when a pin bump changes the queue cleanup
+after an abort or the `signal.abort` arguments in the worker code that `tests/wllama-build.test.ts`
+copies; the rest of the copy has to be compared by hand after a pin bump.
 
 ### Measurements (2026-11-27)
 
