@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import type { FakePace } from '../src/dom/fake-engine';
 import { loadExtension } from './extension';
 import { commandPage, openExtensionShadowRoots, resetExtensionStorage, tabIdForPage } from './page';
 
@@ -36,16 +37,61 @@ interface ViewState {
   pending: number;
 }
 
-/** Serves the synthetic timeline for any x.com page and the Article for an Article path. */
-async function mockX(context: BrowserContext): Promise<void> {
+/**
+ * Serves the synthetic timeline for any x.com page and the Article for an Article path.
+ * A pace makes the fake engine take a measurable time over each request, so the order the
+ * page sends them in can be read while the translation runs.
+ */
+async function mockX(context: BrowserContext, pace?: FakePace): Promise<void> {
+  const article =
+    pace === undefined
+      ? X_ARTICLE_HTML
+      : X_ARTICLE_HTML.replace(
+          '<html lang="ja">',
+          `<html lang="ja" data-bench-pace='${JSON.stringify(pace)}'>`,
+        );
   await context.route('https://x.com/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     await route.fulfill({
       status: 200,
       contentType: 'text/html; charset=utf-8',
-      body: path.includes('/article/') ? X_ARTICLE_HTML : X_BODY_HTML,
+      body: path.includes('/article/') ? article : X_BODY_HTML,
     });
   });
+}
+
+/**
+ * Notes each block as the page sends it to the model. A block is marked
+ * `data-sakutto-pending` when its request starts, so the order of those marks is the order
+ * of the requests, whatever the engine does afterwards.
+ */
+async function recordRequestStarts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const starts: string[] = [];
+    (window as unknown as { requestStarts: string[] }).requestStarts = starts;
+    const seen = new WeakSet<Element>();
+    const label = (element: Element): string =>
+      (element.textContent ?? '').replace(/\s+/gu, ' ').trim();
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target;
+        if (!(target instanceof Element) || seen.has(target)) continue;
+        if (!target.hasAttribute('data-sakutto-pending')) continue;
+        seen.add(target);
+        starts.push(label(target));
+      }
+    }).observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-sakutto-pending'],
+    });
+  });
+}
+
+function requestStarts(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () => (window as unknown as { requestStarts: string[] }).requestStarts ?? [],
+  );
 }
 
 async function pageState(worker: Worker, page: Page): Promise<ViewState> {
@@ -359,6 +405,52 @@ test.describe('X post translation', () => {
       ).not.toContainText('§');
       await expect(article.locator('[itemprop="author"]')).not.toContainText('§');
       await expect(article.locator('[data-testid="UserCell"]')).not.toContainText('§');
+    } finally {
+      await extension.close();
+    }
+  });
+
+  test('translates an Article from its first block, headings and short paragraphs first', async () => {
+    const extension = await loadExtension('ja');
+    try {
+      await mockX(extension.context, { ttfbMs: 200, msPerChar: 4, deltas: 0 });
+      await resetExtensionStorage(extension.worker, {
+        targetLanguage: 'ja',
+        translateXBody: false,
+      });
+      const page = await extension.context.newPage();
+      await page.goto('https://x.com/fixture_kappa/article/2001');
+      // The closing paragraph is the one block long enough to read as prose by its length
+      // alone. It sits far below the first screen; every other block of the Article is on it.
+      await page.addStyleTag({
+        content: '[data-block][data-offset-key="i-0-0"] { margin-top: 2400px; }',
+      });
+      await recordRequestStarts(page);
+
+      await setXBodySetting(extension.worker, true);
+      await waitTranslated(page);
+
+      // Every block of the Article reader is a `div`, heading or not, and all but the
+      // closing paragraph are shorter than the length that reads as prose on a whole page.
+      // Inside the X scope they all count as body copy, so the first screen goes first in
+      // reading order and the long paragraph far below waits for it.
+      expect(await requestStarts(page)).toEqual([
+        'Notes on translating text on your own computer',
+        'Running a translation model locally keeps your text on the device.',
+        'Why it matters',
+        'Nothing leaves the browser.',
+        'It keeps working offline.',
+        'A laptop running the model without a network.',
+        // The closing paragraph, whose text the fixture gives in full.
+        'A closing paragraph that is long enough to read as prose by its length alone, the way a whole-page translation ranks a block, so that the order it is translated in shows whether the short blocks above it are treated the same.',
+      ]);
+      const article = page.locator('[data-testid="twitterArticleReadView"]');
+      await expect(
+        article.locator('[data-block="true"]', { hasText: 'A closing paragraph' }),
+      ).toContainText(MARK);
+      await expect(
+        article.locator('[data-block="true"]', { hasText: 'Why it matters' }),
+      ).toContainText(MARK);
     } finally {
       await extension.close();
     }

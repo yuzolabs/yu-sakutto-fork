@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
+import { fakeTranslateText } from '@/dom/fake-engine';
 import { PageSession, type PageEngine, type SessionPreferences } from '@/dom/session';
 import {
   GrokUnlocker,
@@ -381,7 +382,7 @@ describe('X post translation on the synthetic timeline', () => {
     },
   };
 
-  function preferences(): SessionPreferences {
+  function preferences(overrides: Partial<SessionPreferences> = {}): SessionPreferences {
     return {
       targetLanguage: 'ja',
       targetExplicit: true,
@@ -392,6 +393,7 @@ describe('X post translation on the synthetic timeline', () => {
       context: false,
       tier: 'c8',
       pace: 'quality',
+      ...overrides,
     };
   }
 
@@ -406,7 +408,10 @@ describe('X post translation on the synthetic timeline', () => {
     }
   }
 
-  function xSession(translator: PageEngine): PageSession {
+  function xSession(
+    translator: PageEngine,
+    overrides: Partial<SessionPreferences> = {},
+  ): PageSession {
     const session = new PageSession(document, {
       engine: translator,
       labels: {
@@ -433,7 +438,7 @@ describe('X post translation on the synthetic timeline', () => {
         barAlways: '',
         barAlwaysOn: '',
       },
-      preferences: preferences(),
+      preferences: preferences(overrides),
       scheduleFrame: (callback) => callback(),
       debounceMs: 10,
       scope: xBodyScope(),
@@ -441,6 +446,106 @@ describe('X post translation on the synthetic timeline', () => {
     sessions.push(session);
     return session;
   }
+
+  /** An engine that notes each request as it arrives and takes a moment over it. */
+  function requestLog(): { engine: PageEngine; requests: string[][] } {
+    const requests: string[][] = [];
+    return {
+      requests,
+      engine: {
+        // A little decode time keeps one request from finishing inside the start of the
+        // next, so the order the page sent them in is the order they complete in.
+        async *translate(segments) {
+          // The text without the placeholder tags that keep the inline elements in place.
+          requests.push(segments.map((segment) => segment.text.replace(/<\/?i\d+>/gu, '')));
+          await new Promise((resolve) => setTimeout(resolve, 8));
+          for (const segment of segments) {
+            yield {
+              id: segment.id,
+              // The same marked text the e2e fake engine paints, inside the inline elements.
+              final: fakeTranslateText(segment.text, 'ja'),
+              engine: 'plamo' as const,
+            };
+          }
+        },
+      },
+    };
+  }
+
+  /** What a block reads as once the fake engine's marker is painted into it. */
+  const MARK = '§ja§';
+
+  function paintedText(block: Element | null): string {
+    return (block?.textContent ?? '').replace(/\s+/gu, ' ').trim();
+  }
+
+  /**
+   * A Draft.js block as the X Article reader renders it: a `[data-block]` element whose
+   * text sits in one `div` inside it, with no whitespace between them.
+   */
+  function draftBlock(
+    tag: 'div' | 'h1' | 'h2',
+    key: string,
+    text: string,
+    attributes = '',
+  ): string {
+    const kind =
+      tag === 'div'
+        ? 'longform-unstyled'
+        : tag === 'h1'
+          ? 'longform-header-one'
+          : 'longform-header-two';
+    return `<${tag} class="${kind}" data-block="true" data-editor="fixture" data-offset-key="${key}-0-0"${attributes}><div data-offset-key="${key}-0-0" class="public-DraftStyleDefault-block public-DraftStyleDefault-ltr"><span data-offset-key="${key}-0-0"><span data-text="true">${text}</span></span></div></${tag}>`;
+  }
+
+  /** Elements marked `data-fixture="far"` sit far below the first screen; the rest are on it. */
+  function installBands(): () => void {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (): DOMRect {
+      const far = (this as Element).closest('[data-fixture="far"]') !== null;
+      return far ? new DOMRect(0, 4000, 640, 80) : new DOMRect(0, 20, 640, 40);
+    };
+    return () => {
+      Element.prototype.getBoundingClientRect = original;
+    };
+  }
+
+  /**
+   * The one block of the Article long enough to read as prose by its length alone. On a
+   * whole page it is the only block of the Article that is not ranked as page chrome.
+   */
+  const FAR_PARAGRAPH =
+    'This paragraph is long enough to read as prose on a whole page, so it used to be the one block of the article that went to the model first, from the bottom of the page.';
+
+  /**
+   * An X Article whose every block is a `div` under its `[data-block]` element, so by tag
+   * and length alone the headings and the short paragraphs read as page chrome. The long
+   * paragraph and the last heading sit far below the first screen.
+   */
+  function draftArticle(): string {
+    return `
+      <div data-testid="twitterArticleReadView">
+        <div data-testid="twitter-article-title"><span>Notes on translating text on your own computer</span></div>
+        <div data-testid="twitterArticleRichTextView">
+          <div data-contents="true">
+            ${draftBlock('h1', 'a', 'Part 1: Colab credits and the CLI')}
+            ${draftBlock('div', 'b', 'The cheapest way to start.')}
+            ${draftBlock('div', 'c', 'Below, seven ways to use it.')}
+            ${draftBlock('div', 'd', FAR_PARAGRAPH, ' data-fixture="far"')}
+            ${draftBlock('h2', 'e', 'Advanced: the official CLI', ' data-fixture="far"')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /** The requests the Article should produce: the first screen in reading order, then the far blocks. */
+  const ARTICLE_REQUESTS = [
+    ['Notes on translating text on your own computer'],
+    ['Part 1: Colab credits and the CLI'],
+    ['The cheapest way to start.', 'Below, seven ways to use it.'],
+    [FAR_PARAGRAPH],
+    ['Advanced: the official CLI'],
+  ];
 
   it('unlocks Grok translations and translates only foreign X text', async () => {
     load('x-body.html');
@@ -511,5 +616,85 @@ describe('X post translation on the synthetic timeline', () => {
     session.restore();
     expect(span.textContent).toBe('Shipping today.\n\nThanks to all testers.\n');
     expect(span.parentElement?.innerHTML).toBe(before);
+  });
+
+  it('translates an Article from its first block, headings and short paragraphs first', async () => {
+    document.body.innerHTML = draftArticle();
+    const restore = installBands();
+    const { engine: logged, requests } = requestLog();
+    const session = xSession(logged);
+    try {
+      await session.translate();
+      await settle(session);
+    } finally {
+      restore();
+    }
+
+    // The title opens the run on its own, each heading goes alone, and the short paragraphs
+    // of the first screen are sent before the long paragraph far below them.
+    expect(requests).toEqual(ARTICLE_REQUESTS);
+    const article = document.querySelector('[data-testid="twitterArticleReadView"]');
+    const blocks = [...(article?.querySelectorAll('.public-DraftStyleDefault-block') ?? [])];
+    expect(blocks.map(paintedText)).toEqual([
+      `${MARK}Part 1: Colab credits and the CLI`,
+      `${MARK}The cheapest way to start.`,
+      `${MARK}Below, seven ways to use it.`,
+      `${MARK}${FAR_PARAGRAPH}`,
+      `${MARK}Advanced: the official CLI`,
+    ]);
+    // Each heading is still a heading of the article, translated in place under it.
+    expect(blocks[0]?.parentElement?.localName).toBe('h1');
+    expect(blocks[4]?.parentElement?.localName).toBe('h2');
+    expect(
+      paintedText(article?.querySelector('[data-testid="twitter-article-title"]') ?? null),
+    ).toBe(`${MARK}Notes on translating text on your own computer`);
+    expect(session.state()).toMatchObject({ pending: 0, total: 6, scope: 'x-body' });
+  });
+
+  it('hands the first screen of an Article to the GPU tier ahead of far paragraphs', async () => {
+    // On the GPU tier every request is in flight at once. The order the page starts them in
+    // is still the order of the queue, so the first screen still goes to the model first.
+    document.body.innerHTML = draftArticle();
+    const restore = installBands();
+    const { engine: logged, requests } = requestLog();
+    const session = xSession(logged, { tier: 'g' });
+    try {
+      await session.translate();
+      await settle(session);
+    } finally {
+      restore();
+    }
+
+    expect(requests).toEqual(ARTICLE_REQUESTS);
+    expect(session.state()).toMatchObject({ pending: 0, total: 6 });
+  });
+
+  it('translates a short post on screen before a long one further down the timeline', async () => {
+    const long =
+      'This post is long enough to read as prose by its length alone, so on a whole page it is ranked ahead of every short post above it.';
+    document.body.innerHTML = `
+      <div aria-label="Timeline: Your Home Timeline">
+        <article data-testid="tweet" id="post-short">
+          <div data-testid="tweetText" lang="en"><span>A short post on the first screen.</span></div>
+        </article>
+        <article data-testid="tweet" id="post-long" data-fixture="far">
+          <div data-testid="tweetText" lang="en"><span>${long}</span></div>
+        </article>
+      </div>`;
+    const restore = installBands();
+    const { engine: logged, requests } = requestLog();
+    const session = xSession(logged);
+    try {
+      await session.translate();
+      await settle(session);
+    } finally {
+      restore();
+    }
+
+    expect(requests).toEqual([['A short post on the first screen.'], [long]]);
+    expect(text('#post-short [data-testid="tweetText"]')).toBe(
+      `${MARK}A short post on the first screen.`,
+    );
+    expect(text('#post-long [data-testid="tweetText"]')).toBe(`${MARK}${long}`);
   });
 });
