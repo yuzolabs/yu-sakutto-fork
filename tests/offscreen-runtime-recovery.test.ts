@@ -7,6 +7,7 @@ import type { TranslateOptions } from '@/engine/types';
 import type { WllamaCompletionParams } from '@/engine/wllama/module';
 import { EMPTY_GPU_DIAGNOSTIC } from '@/shared/gpu-diagnostic';
 import { collectChunks } from './support/fakes';
+import { deferred } from './support/ports';
 
 /**
  * The offscreen host's own `createServices`, wired to the real runtime, lazy engine and
@@ -21,9 +22,15 @@ vi.mock('wxt/browser', () => ({
 interface FakeWllamaInstance {
   params: Record<string, unknown>;
   exited: boolean;
+  completions: number;
+  /** Set by a crash step: every later completion on this worker never answers. */
+  wedged: boolean;
 }
 
-type CompletionStep = (params: WllamaCompletionParams) => Promise<void>;
+type CompletionStep = (
+  params: WllamaCompletionParams,
+  instance: FakeWllamaInstance,
+) => Promise<void>;
 
 const native = vi.hoisted(() => ({
   instances: [] as FakeWllamaInstance[],
@@ -33,16 +40,23 @@ const native = vi.hoisted(() => ({
 
 vi.mock('@/engine/wllama', () => ({
   createWllama: vi.fn(async () => {
-    const instance: FakeWllamaInstance = { params: {}, exited: false };
+    const instance: FakeWllamaInstance = {
+      params: {},
+      exited: false,
+      completions: 0,
+      wedged: false,
+    };
     native.instances.push(instance);
     return {
       loadModel: vi.fn(async (_blobs: Blob[], params: Record<string, unknown>) => {
         instance.params = params;
       }),
       createCompletion: vi.fn(async (params: WllamaCompletionParams) => {
+        instance.completions += 1;
+        if (instance.wedged) return new Promise<void>(() => undefined);
         const step = native.steps.shift();
         if (step) {
-          await step(params);
+          await step(params, instance);
           return;
         }
         params.onData?.({ choices: [{ text: 'こんにちは', finish_reason: 'stop' }] });
@@ -96,7 +110,10 @@ vi.mock('@/engine/model/manager', () => {
     a.nParallel === b.nParallel &&
     a.nCtx === b.nCtx;
   return {
-    /** Keeps one loaded runtime per selection, like the real manager, with no file checks. */
+    /**
+     * Keeps one loaded runtime per selection and loads again when it stopped, like the real
+     * manager, with no file checks.
+     */
     ModelManager: class {
       private loaded: Loaded | null = null;
 
@@ -111,7 +128,12 @@ vi.mock('@/engine/model/manager', () => {
       }
 
       async ensureLoaded(id: ModelId, selection: BackendSelection): Promise<Loaded> {
-        if (this.loaded && this.loaded.id === id && sameShape(this.loaded.selection, selection)) {
+        if (
+          this.loaded &&
+          this.loaded.id === id &&
+          this.loaded.runtime.stopped !== true &&
+          sameShape(this.loaded.selection, selection)
+        ) {
           return this.loaded;
         }
         await this.unload();
@@ -158,6 +180,20 @@ function failNextCompletion(error: unknown): void {
   native.steps.push(async () => {
     throw error;
   });
+}
+
+/** A JS exception escaped the worker: the request fails and the worker stops answering. */
+function crashNextCompletion(error: unknown, after: Promise<unknown> = Promise.resolve()): void {
+  native.steps.push(async (_params, instance) => {
+    await after;
+    instance.wedged = true;
+    throw error;
+  });
+}
+
+/** The worker exception that used to move the reported X article from WebGPU to the CPU. */
+function workerException(): Error {
+  return runtimeError('Invalid typed array length: 1163217991');
 }
 
 async function openServices(): Promise<{ host: EngineHost; services: EngineServices }> {
@@ -231,5 +267,87 @@ describe('offscreen host after a lost GPU', () => {
     });
     expect(status.gpuDiagnostic?.error).toContain('(ABORT) Aborted(device lost)');
     expect(status.gpuDiagnostic?.vendor).toBe('nvidia');
+  });
+
+  it('counts a JS exception that names a lost device as a lost GPU', async () => {
+    const { services } = await openServices();
+    const deviceLost = "Failed to execute 'mapAsync' on 'GPUBuffer': Device is lost";
+
+    failNextCompletion(runtimeError(deviceLost));
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+    failNextCompletion(runtimeError(deviceLost));
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+
+    expect(loadedSlots()).toEqual([16, 16, 4]);
+  });
+});
+
+describe('offscreen host after the runtime crashed', () => {
+  it('restarts a crashed WebGPU runtime on the same slots', async () => {
+    const { host, services } = await openServices();
+
+    crashNextCompletion(workerException());
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+    crashNextCompletion(workerException());
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+
+    expect(loadedSlots()).toEqual([16, 16, 16]);
+    expect(native.instances.slice(0, 2).every((instance) => instance.exited)).toBe(true);
+    const status = await host.status();
+    expect(status).toMatchObject({ backend: 'webgpu', parallel: 16, gpuFallback: false });
+    expect(status.gpuFallbackReason).toBeUndefined();
+    expect(status.gpuDiagnostic?.error).toBeNull();
+  });
+
+  it('does not count a crash toward stepping down after a lost GPU', async () => {
+    const { services } = await openServices();
+
+    crashNextCompletion(workerException());
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+    failNextCompletion(runtimeError(WASM_ABORT));
+    await expect(translateHello(services)).resolves.toBe('こんにちは');
+
+    expect(loadedSlots()).toEqual([16, 16, 16]);
+  });
+
+  it('restarts a crashed CPU runtime and finishes the waiting request', async () => {
+    const { host, services } = await openServices();
+    await services.setTier('c8');
+    crashNextCompletion(workerException());
+
+    // One CPU slot: the second request waits for the first, which crashes the worker. The
+    // stopped worker would never answer it.
+    const translations = await Promise.all([
+      translateHello(services),
+      collectChunks(services.lazy.translate([{ id: 'b', text: 'Bye.' }], options())),
+    ]);
+
+    expect(translations[0]).toBe('こんにちは');
+    expect(translations[1].at(-1)).toMatchObject({ id: 'b', final: 'こんにちは' });
+    expect(native.instances.map((instance) => instance.params['n_gpu_layers'])).toEqual([0, 0]);
+    expect(native.instances[0]?.exited).toBe(true);
+    expect(await host.status()).toMatchObject({ backend: 'cpu-wasm', gpuFallback: false });
+  });
+
+  it('ends every request that was running on the crashed runtime', async () => {
+    const { services } = await openServices();
+    const started = deferred<void>();
+    // The first request starts streaming and then never hears back from the worker; the
+    // second one crashes it.
+    native.steps.push(async (params) => {
+      params.onData?.({ choices: [{ text: 'こ' }] });
+      started.resolve();
+      await new Promise<never>(() => undefined);
+    });
+    crashNextCompletion(workerException(), started.promise);
+
+    const [first, second] = await Promise.all([
+      translateHello(services),
+      collectChunks(services.lazy.translate([{ id: 'b', text: 'Bye.' }], options())),
+    ]);
+
+    expect(first).toBe('こんにちは');
+    expect(second.at(-1)).toMatchObject({ id: 'b', final: 'こんにちは' });
+    expect(loadedSlots()).toEqual([16, 16]);
   });
 });

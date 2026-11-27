@@ -136,6 +136,8 @@ export class FakeRuntime implements LlamaRuntime {
   handler: (prompt: string) => string;
   /** When true, stop at maxTokens and report a length finish, like a collapsed kernel. */
   fillBudget = false;
+  /** Set to true to look like a wllama runtime whose worker crashed. */
+  stopped = false;
 
   constructor(
     handler: (prompt: string) => string,

@@ -93,4 +93,26 @@ describe('CpuRetryRuntimeSlot', () => {
     await flushTasks();
     expect(runtime.disposed).toBe(true);
   });
+
+  it('loads a new copy after the previous one stopped', async () => {
+    const first = new FakeRuntime(() => 'x');
+    const second = new FakeRuntime(() => 'y');
+    const create = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const slot = new CpuRetryRuntimeSlot({
+      create,
+      modelBlob: async () => new Blob(['weights']),
+      activeModelId: () => DEFAULT_MODEL_ID,
+      loaded: () => null,
+      cpuSelection: () => CPU,
+    });
+
+    await expect(slot.load(new AbortController().signal)).resolves.toBe(first);
+    await expect(slot.load(new AbortController().signal)).resolves.toBe(first);
+    first.stopped = true;
+    await expect(slot.load(new AbortController().signal)).resolves.toBe(second);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    await flushTasks();
+    expect(first.disposed).toBe(true);
+  });
 });

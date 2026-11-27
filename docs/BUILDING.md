@@ -800,11 +800,29 @@ response length. The worker read the length from the first four bytes of the req
 protocol's magic number `0x45554C47` (1163217991) still sat, and tried to build a view of
 1163217991 bytes. That `RangeError` went through `handleError` as a `signal.abort`, and the main
 thread rejected every queued and waiting task with `WllamaRuntimeError` (`RuntimeError`). With
-sixteen requests streaming, one bad request failed all sixteen, and `isRuntimeDead` in
-`src/engine/in-browser/runtime.ts` reads that `RuntimeError` as a dead runtime and reports a lost
-GPU; Sakutto then unloads and reloads the model, and a second loss within 120 s
-(`selectionAfterGpuLoss` in `src/engine/in-browser/backend.ts`) moves it to a lighter selection
+sixteen requests streaming, one bad request failed all sixteen. At the time, `isRuntimeDead` in
+`src/engine/in-browser/runtime.ts` read that `RuntimeError` as a dead runtime and Sakutto reported
+a lost GPU; it unloaded and reloaded the model, and a second loss within 120 s
+(`selectionAfterGpuLoss` in `src/engine/in-browser/backend.ts`) moved it to a lighter selection
 (four WebGPU slots, then one, then the CPU).
+
+Sakutto now tells that `exception`-type `RuntimeError` apart from a lost GPU device
+(`isGpuDeviceLoss` and `runtimeStopError` in `src/engine/in-browser/runtime.ts`).
+`isGpuDeviceLoss` only counts wasm aborts (`(ABORT)` from wllama's `onRecvMsg` for an `abort`-type
+`signal.abort`, emscripten's `Aborted(`, or the worker's `wllama has crashed` reply) or error text
+naming a lost/failed device or WebGPU (`device is lost`/`device was lost`, ggml-webgpu `Device
+lost!`/`Device error!`, `DXGI_ERROR_DEVICE_*`, `VK_ERROR_DEVICE_LOST`, `WebGPU`, `ggml_webgpu`, or
+a WebGPU interface name such as `GPUBuffer`). A JS exception inside the worker (`signal.abort` of
+type `exception`, without `(ABORT)`) that names none of those — such as
+`RangeError: Invalid typed array length: 1163217991` — does not count: it raises `runtime-crashed`
+instead of `gpu-lost`, fails the other requests on that runtime (`LlamaRuntime.stopped`), drops the
+engine (`LazyInBrowserEngine` in `src/engine/in-browser/lazy-engine.ts`) and unloads the stopped
+runtime (`EngineHost` in `src/engine/offscreen/host.ts`), and restarts a new runtime on the same
+selection (up to 3 restarts per translate call) without counting toward stepping down. When WebGPU
+does hit a device loss, `gpu-lost` still reloads the same selection first and steps down on a
+second loss within 120 s (`GpuLossHistory` in `src/engine/in-browser/backend.ts`; setting the tier
+again forgets earlier losses), and `gpuDiagnostic.error` keeps the runtime's failure text when a
+lost GPU moves the model to the CPU.
 
 ### What the patch changes
 
@@ -819,14 +837,19 @@ a normal answer, keeping the null pointer only when even that answer cannot be b
 
 Only the call that failed rejects, with a typed `WllamaError`. wllama's `getResponse` cancels the
 request in its `finally` to release its slot, the other requests keep streaming, and the backend
-stays on WebGPU. No Sakutto source changed: `isRuntimeDead` already treats a typed `WllamaError`
-as a live runtime and only a string or a `RuntimeError` as dead.
+stays on WebGPU. Patch `0018` itself needed no Sakutto change for this case: `isRuntimeDead`
+already treats a typed `WllamaError` as a live runtime and only a string or a `RuntimeError` as
+dead.
 
 In the rare fallback where even `erro_evt` cannot be built and `wllama_action` returns a null
-pointer, the worker posts `err` as a plain string for that call alone. The main thread rejects
-that call with the string, and Sakutto reads it as a lost GPU only on WebGPU, where the other
-running requests then fail and the model unloads and reloads as before the patch. On the CPU, only
-that request fails.
+pointer, the worker posts `err` as a plain string for that call alone. The main thread rejects that
+call with the string (`Action "<name>" failed, see the native log`), which `isRuntimeDead` treats as
+a stopped runtime. Because that string names neither a wasm abort nor a GPU device,
+`runtimeStopError` emits `runtime-crashed` on WebGPU and on the CPU alike: on every backend, the
+first call to see the stop fails every other call in flight on that runtime, later calls fail at
+once without reaching the worker (`LlamaRuntime.stopped`), `ModelManager.ensureLoaded`
+(`src/engine/model/manager.ts`) never hands out a stopped runtime again, and the next load starts a
+new runtime on the same selection without counting toward stepping down.
 
 `tests/wllama-build.test.ts` checks the patch content and runs the pinned worker call queue and
 action runner against a fake wasm: unpatched, a null pointer posts `signal.abort` with
@@ -855,7 +878,8 @@ threads, `n_ctx` 16384, `"using device WebGPU"`, `"offloaded 17/17 layers to GPU
 
 In both builds a plain completion after each run still returned text: the worker process stayed
 alive. What failed in the previous build was every request in flight on the main thread, which
-Sakutto reads as a lost GPU.
+Sakutto read as a lost GPU at the time; Sakutto now restarts the runtime on the same selection
+instead.
 
 ### What was not measured
 

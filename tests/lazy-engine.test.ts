@@ -235,6 +235,29 @@ describe('LazyInBrowserEngine after the GPU is lost', () => {
     expect(loadRuntime).toHaveBeenCalledOnce();
   });
 
+  it('does not walk the lost-GPU steps for a crashed runtime', async () => {
+    const crashing = new FakeRuntime(() => '');
+    crashing.complete = async () => {
+      throw new EngineError('runtime-crashed', 'The translation runtime stopped.');
+    };
+    const onRuntimeCrash = vi.fn(async () => undefined);
+    const runtimes = [crashing, new FakeRuntime(() => 'は')];
+    const loadRuntime = vi.fn(async () => ({ runtime: runtimes.shift()!, selection: SELECTION }));
+    const onGpuLost = vi.fn(async () => undefined);
+    const engine = new LazyInBrowserEngine({ loadRuntime, onGpuLost, onRuntimeCrash });
+
+    await expect(collectChunks(engine.translate([a], options()))).resolves.toEqual([
+      { id: 'a', textDelta: 'は', engine: 'plamo' },
+      { id: 'a', final: 'は', engine: 'plamo' },
+    ]);
+    expect(onRuntimeCrash).toHaveBeenCalledOnce();
+    expect(onRuntimeCrash).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'runtime-crashed' }),
+    );
+    expect(onGpuLost).not.toHaveBeenCalled();
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves any other failure to the caller', async () => {
     const broken = new FakeRuntime(() => '');
     broken.complete = async () => {
@@ -319,5 +342,77 @@ describe('LazyInBrowserEngine after the GPU is lost', () => {
       ),
     );
     expect(onGpuLost).not.toHaveBeenCalled();
+  });
+});
+
+describe('LazyInBrowserEngine after the runtime crashed', () => {
+  const crashed = () => new EngineError('runtime-crashed', 'The translation runtime stopped.');
+  const a = { id: 'a', text: 'Hello.' };
+  const b = { id: 'b', text: 'Bye.' };
+
+  function crashing(): FakeRuntime {
+    const runtime = new FakeRuntime(() => '');
+    runtime.complete = async () => {
+      throw crashed();
+    };
+    return runtime;
+  }
+
+  function engineOver(runtimes: FakeRuntime[], withHost = true) {
+    const loadRuntime = vi.fn(async () => {
+      const runtime = runtimes.shift();
+      if (!runtime) throw new Error('nothing left to load');
+      return { runtime, selection: SELECTION };
+    });
+    const onRuntimeCrash = vi.fn(async () => undefined);
+    const engine = new LazyInBrowserEngine({
+      loadRuntime,
+      ...(withHost ? { onRuntimeCrash } : {}),
+    });
+    return { engine, loadRuntime, onRuntimeCrash };
+  }
+
+  it('loads a new runtime and finishes the request', async () => {
+    const { engine, loadRuntime } = engineOver([crashing(), new FakeRuntime(() => 'は')]);
+
+    const chunks = await collectChunks(engine.translate([a], options()));
+
+    expect(chunks.at(-1)).toEqual({ id: 'a', final: 'は', engine: 'plamo' });
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads a new runtime even when no host listens for the crash', async () => {
+    const { engine, loadRuntime } = engineOver([crashing(), new FakeRuntime(() => 'は')], false);
+
+    const chunks = await collectChunks(engine.translate([a], options()));
+
+    expect(chunks.at(-1)).toEqual({ id: 'a', final: 'は', engine: 'plamo' });
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('restarts once for every request on the crashed runtime', async () => {
+    const { engine, loadRuntime, onRuntimeCrash } = engineOver([
+      crashing(),
+      new FakeRuntime(() => 'は'),
+    ]);
+
+    const [first, second] = await Promise.all([
+      collectChunks(engine.translate([a], options())),
+      collectChunks(engine.translate([b], options())),
+    ]);
+
+    expect(first.at(-1)).toEqual({ id: 'a', final: 'は', engine: 'plamo' });
+    expect(second.at(-1)).toEqual({ id: 'b', final: 'は', engine: 'plamo' });
+    expect(onRuntimeCrash).toHaveBeenCalledOnce();
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands the crash back after a few restarts', async () => {
+    const { engine, loadRuntime } = engineOver([crashing(), crashing(), crashing(), crashing()]);
+
+    await expect(collectChunks(engine.translate([a], options()))).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+    expect(loadRuntime).toHaveBeenCalledTimes(4);
   });
 });

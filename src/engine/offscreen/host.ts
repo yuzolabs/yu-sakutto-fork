@@ -647,7 +647,18 @@ export class EngineHost {
       await disposeCpuRetry();
       await manager.unload();
     };
-    const lazy = new LazyInBrowserEngine({ loadRuntime: load, loadRetryRuntime, onGpuLost });
+    // A runtime that stopped without losing the GPU device, such as a JS exception inside the
+    // wllama worker, loads again on the same selection. It is not a lost GPU: it does not count
+    // toward stepping down, and the WebGPU diagnostic stays as it was.
+    const onRuntimeCrash = async (): Promise<void> => {
+      if (manager.loadedModel?.runtime.stopped === true) await manager.unload();
+    };
+    const lazy = new LazyInBrowserEngine({
+      loadRuntime: load,
+      loadRetryRuntime,
+      onGpuLost,
+      onRuntimeCrash,
+    });
     const localRuntime = new LocalServerRuntime(() => this.localConfig);
     this.localScheduler = new JobScheduler(localRuntime.parallel, 'pool');
     const localEngine = new InBrowserEngine(localRuntime, { scheduler: this.localScheduler });
