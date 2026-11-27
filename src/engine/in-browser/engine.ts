@@ -36,7 +36,8 @@ import type {
 } from '../types';
 import { canonicalLanguage, JA_EASY_TARGET, plamoPromptTargetLanguage } from '@/shared/languages';
 import { CONTEXT_TOKENS, refillsFreeSlots } from './backend';
-import type { LlamaRuntime } from './runtime';
+import type { CompletionRequest, CompletionResult, LlamaRuntime } from './runtime';
+import type { RuntimeCrashLedger } from './runtime-crash-ledger';
 
 export interface InBrowserEngineOptions {
   config?: Partial<PlanConfig>;
@@ -46,6 +47,11 @@ export interface InBrowserEngineOptions {
   loadRetryRuntime?: (signal: AbortSignal) => Promise<LlamaRuntime | null>;
   /** Fired once per piece that looked like a collapsed kernel. */
   onDegenerateBlock?: () => void;
+  /**
+   * Pieces that were running when the runtime crashed. It outlives this engine, which is
+   * replaced with the runtime, so a piece that keeps crashing it fails alone.
+   */
+  crashLedger?: RuntimeCrashLedger;
 }
 
 /** A local server batches by itself, and one slot has nothing to start together. */
@@ -140,6 +146,7 @@ export class InBrowserEngine implements IdentifiedEngine {
   private readonly scheduler: JobScheduler;
   private readonly loadRetryRuntime: InBrowserEngineOptions['loadRetryRuntime'];
   private readonly onDegenerateBlock: InBrowserEngineOptions['onDegenerateBlock'];
+  private readonly crashLedger: RuntimeCrashLedger | undefined;
   private degenerateHits = 0;
 
   constructor(runtime: LlamaRuntime, options: InBrowserEngineOptions = {}) {
@@ -148,6 +155,7 @@ export class InBrowserEngine implements IdentifiedEngine {
     this.contextTokens = options.contextTokens ?? CONTEXT_TOKENS;
     this.loadRetryRuntime = options.loadRetryRuntime;
     this.onDegenerateBlock = options.onDegenerateBlock;
+    this.crashLedger = options.crashLedger;
     this.scheduler =
       options.scheduler ?? new JobScheduler(runtime.parallel, schedulerMode(runtime));
   }
@@ -645,6 +653,14 @@ export class InBrowserEngine implements IdentifiedEngine {
       return { text };
     }
 
+    const crashKey = runtimeCrashKey(tgt, src, source);
+    if (this.crashLedger?.isCulprit(crashKey)) {
+      // This piece crashed the runtime while it ran alone. It keeps its source text instead of
+      // crashing the runtime and reloading it once more.
+      if (text.length > 0) onDelta(text, true);
+      return { text, error: true };
+    }
+
     const glossary = sanitizeGlossary(options.glossary ?? []).filter((entry) =>
       source.includes(entry.source),
     );
@@ -684,7 +700,7 @@ export class InBrowserEngine implements IdentifiedEngine {
       let lengthError: unknown = null;
       let hitMaxTokens: boolean;
       try {
-        const result = await this.runtime.complete({
+        const result = await this.runCompletion(crashKey, {
           prompt,
           maxTokens: budget,
           signal,
@@ -741,6 +757,7 @@ export class InBrowserEngine implements IdentifiedEngine {
         return this.recoverBroken(text, prompt, maxTokens, signal, onDelta, streamed);
       }
       const retried = await this.retryInvisible(
+        crashKey,
         text,
         source,
         output,
@@ -755,6 +772,37 @@ export class InBrowserEngine implements IdentifiedEngine {
     }
 
     return this.recoverBroken(text, prompt, maxTokens, signal, onDelta, streamed);
+  }
+
+  /**
+   * One completion on the runtime, kept in the crash ledger: a piece that was running when the
+   * runtime crashed runs alone, a crash marks the piece, and a finished piece is cleared. A
+   * request that never started, because the runtime had already stopped, marks nothing.
+   */
+  private async runCompletion(
+    crashKey: string,
+    request: CompletionRequest,
+  ): Promise<CompletionResult | void> {
+    const ledger = this.crashLedger;
+    if (!ledger) return this.runtime.complete(request);
+    const alone = ledger.isSuspect(crashKey);
+    let started = false;
+    try {
+      const result = await this.runtime.complete({
+        ...request,
+        ...(alone ? { alone: true } : {}),
+        onStart: () => {
+          started = true;
+        },
+      });
+      ledger.noteFinished(crashKey);
+      return result;
+    } catch (error) {
+      if (started && isEngineError(error) && error.code === 'runtime-crashed') {
+        ledger.noteCrash(crashKey, alone);
+      }
+      throw error;
+    }
   }
 
   private async tokenCount(text: string, purpose: 'prompt' | 'source'): Promise<number> {
@@ -805,6 +853,7 @@ export class InBrowserEngine implements IdentifiedEngine {
    * stricter strip. The already-painted garbage is replaced with the source first.
    */
   private async retryInvisible(
+    crashKey: string,
     original: string,
     careful: string,
     output: string,
@@ -843,7 +892,7 @@ export class InBrowserEngine implements IdentifiedEngine {
 
     let recovered = '';
     try {
-      const result = await this.runtime.complete({
+      const result = await this.runCompletion(crashKey, {
         prompt,
         maxTokens: Math.min(
           completionTokenBudget(aggressive, await this.tokenCount(aggressive, 'source')),
@@ -939,6 +988,11 @@ export class InBrowserEngine implements IdentifiedEngine {
     if (!this.loadRetryRuntime) return Promise.resolve(null);
     return this.loadRetryRuntime(signal);
   }
+}
+
+/** One piece of text into one language pair, as the runtime crash ledger knows it. */
+function runtimeCrashKey(tgt: string, src: string | null, source: string): string {
+  return JSON.stringify([tgt, src, source]);
 }
 
 function isOversized(error: unknown): boolean {

@@ -11,6 +11,16 @@ export interface CompletionRequest {
   maxTokens: number;
   signal: AbortSignal;
   onToken: (text: string) => void;
+  /**
+   * Run with no other completion beside it on this runtime, so a crash while it runs can only
+   * be its own. Runtimes that run one completion at a time already do.
+   */
+  alone?: boolean;
+  /**
+   * Called once the completion has its slot on a running runtime, just before it reaches the
+   * model. A request that fails without it never ran, so a crash it fails with is not its own.
+   */
+  onStart?: () => void;
 }
 
 /** Present when the runtime can tell how generation stopped. */
@@ -23,6 +33,12 @@ export interface LlamaRuntime {
   readonly backend: BackendKind;
   readonly threads: number;
   readonly parallel: number;
+  /**
+   * True once the runtime has stopped and cannot answer any more: the wasm aborted, the worker
+   * threw, or the runtime was disposed. Every later call fails at once, so whoever holds it has
+   * to load a new one.
+   */
+  readonly stopped?: boolean;
   complete(request: CompletionRequest): Promise<CompletionResult | void>;
   /** Real tokenizer length when the runtime can provide it (wllama `tokenize`). */
   tokenize?(text: string): Promise<number>;
@@ -35,39 +51,62 @@ export type RuntimeFactory = (file: Blob, selection: BackendSelection) => Promis
  * A cancelled completion is left to finish. Aborting the WASM call wedges the
  * pthread, so the slot stays busy until that generation ends and then opens
  * for the next request. Width matches `n_parallel`.
+ *
+ * A task that asks to run `alone` waits until every running task has finished and keeps the
+ * others waiting while it runs. Waiting tasks start in the order they asked, so later tasks do
+ * not overtake one that waits to run alone.
  */
 export class CompletionGate {
   private active = 0;
-  private readonly waiters: Array<() => void> = [];
+  private aloneActive = false;
+  private readonly waiters: Array<{ alone: boolean; start: () => void }> = [];
 
   constructor(private readonly limit = 1) {}
 
-  async exclusive(task: () => Promise<void>): Promise<void> {
-    await this.acquire();
+  async exclusive(task: () => Promise<void>, alone = false): Promise<void> {
+    await this.acquire(alone);
     try {
       await task();
     } finally {
-      this.release();
+      this.release(alone);
     }
   }
 
-  private acquire(): Promise<void> {
-    if (this.active < Math.max(1, this.limit)) {
-      this.active += 1;
+  private canStart(alone: boolean): boolean {
+    if (this.aloneActive) return false;
+    return alone ? this.active === 0 : this.active < Math.max(1, this.limit);
+  }
+
+  private begin(alone: boolean): void {
+    this.active += 1;
+    if (alone) this.aloneActive = true;
+  }
+
+  private acquire(alone: boolean): Promise<void> {
+    if (this.waiters.length === 0 && this.canStart(alone)) {
+      this.begin(alone);
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      this.waiters.push(() => {
-        this.active += 1;
-        resolve();
+      this.waiters.push({
+        alone,
+        start: () => {
+          this.begin(alone);
+          resolve();
+        },
       });
     });
   }
 
-  private release(): void {
+  private release(alone: boolean): void {
     this.active = Math.max(0, this.active - 1);
-    const next = this.waiters.shift();
-    if (next) next();
+    if (alone) this.aloneActive = false;
+    for (;;) {
+      const next = this.waiters[0];
+      if (!next || !this.canStart(next.alone)) return;
+      this.waiters.shift();
+      next.start();
+    }
   }
 }
 
@@ -82,14 +121,72 @@ export function forwardCompletionToken(
 }
 
 /**
- * ggml aborts the WASM module when the GPU device goes away. The request running at that moment
- * rejects with wllama's RuntimeError, and every later call rejects with the plain string its
- * worker posts back. A failure the model itself reports is a typed WllamaError instead, and
- * leaves the runtime usable.
+ * Whether a rejected wllama call left the runtime unusable. wllama rejects every call the worker
+ * was running with its RuntimeError when the wasm module aborts (ggml aborts it when the GPU
+ * device goes away) and also when a JS exception escapes the worker; every call after a wasm
+ * abort rejects with the plain string the worker posts back. A failure the model itself reports
+ * is a typed WllamaError instead, and leaves the runtime usable.
  */
 export function isRuntimeDead(error: unknown): boolean {
   if (typeof error === 'string') return true;
   return error instanceof Error && error.name === 'RuntimeError';
+}
+
+/** The text wllama rejected a call with, kept as the `detail` of the error Sakutto raises for it. */
+function runtimeFailureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Evidence that the wasm module itself aborted. wllama's `onRecvMsg` prefixes the message of a
+ * `signal.abort` of type `abort` with `(ABORT)`, emscripten words an abort as `Aborted(...)`, and
+ * the worker answers every call after an abort with "wllama has crashed". A JS exception inside
+ * the worker (`signal.abort` of type `exception`) carries none of these.
+ */
+const WASM_ABORT_PATTERN = /^\(ABORT\)|\bAborted\(|wllama has crashed/u;
+
+/**
+ * Error text that names the GPU device: "device is lost" / "device was lost" from the browser's
+ * WebGPU, ggml-webgpu's "Device lost!" and "Device error!", the D3D12 and Vulkan device-removed
+ * codes, and any WebGPU or ggml-webgpu message.
+ */
+const GPU_DEVICE_FAILURE_PATTERN =
+  /device (?:is |was |has been )?lost|lost (?:the )?device|device error|DXGI_ERROR_DEVICE_(?:REMOVED|HUNG|RESET)|VK_ERROR_DEVICE_LOST|WebGPU|ggml_webgpu/iu;
+
+/** A WebGPU interface such as `GPUDevice` or `GPUBuffer` named in a JS exception. */
+const WEBGPU_INTERFACE_PATTERN = /\bGPU[A-Z][A-Za-z]+/u;
+
+/**
+ * Whether a stopped runtime counts as a lost GPU device: the wasm aborted, or the error text
+ * names a lost or failed device or the WebGPU API. A JS exception inside the worker that names
+ * neither, such as the RangeError a failed wllama action used to raise, is a worker bug. The
+ * device is fine there, and fewer slots or the CPU would not help.
+ */
+export function isGpuDeviceLoss(error: unknown): boolean {
+  if (!isRuntimeDead(error)) return false;
+  const text = runtimeFailureText(error);
+  return (
+    WASM_ABORT_PATTERN.test(text) ||
+    GPU_DEVICE_FAILURE_PATTERN.test(text) ||
+    WEBGPU_INTERFACE_PATTERN.test(text)
+  );
+}
+
+/**
+ * The error a request fails with when the runtime under it stopped. `gpu-lost` goes down the
+ * lost-GPU path, which reloads and then steps down to fewer slots and the CPU. `runtime-crashed`
+ * loads a new runtime on the same selection and does not count as a lost GPU. A CPU runtime has
+ * no GPU to lose, so it always restarts as it was.
+ */
+export function runtimeStopError(backend: BackendKind, error: unknown): EngineError {
+  const detail = runtimeFailureText(error);
+  if (backend === 'webgpu' && isGpuDeviceLoss(error)) {
+    return new EngineError('gpu-lost', 'The GPU stopped working.', { cause: error, detail });
+  }
+  return new EngineError('runtime-crashed', 'The translation runtime stopped.', {
+    cause: error,
+    detail,
+  });
 }
 
 export type GpuEvidence = 'engaged' | 'missing' | 'unknown';
@@ -311,17 +408,35 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
   }
 
   const gate = new CompletionGate(selection.nParallel);
-  // The first request to see the abort fails the others too: reloading terminates the worker,
-  // and a request still waiting on it would never settle.
-  let reportLoss: (error: unknown) => void = () => undefined;
-  const lost = new Promise<never>((_resolve, reject) => {
-    reportLoss = reject;
+  // The first call to see the runtime stop fails every other call too, on every backend:
+  // reloading terminates the worker, and a call still waiting on it would never settle. Calls
+  // made after that fail at once instead of starting on a worker that has already failed.
+  let stopCause: { error: unknown } | null = null;
+  let rejectStopped: (error: unknown) => void = () => undefined;
+  const stopReported = new Promise<never>((_resolve, reject) => {
+    rejectStopped = reject;
   });
-  lost.catch(() => undefined);
+  stopReported.catch(() => undefined);
+  const noteStop = (error: unknown): void => {
+    if (stopCause) return;
+    stopCause = { error };
+    rejectStopped(error);
+  };
+  /** A disposed runtime ends its calls as aborted; a stopped one names why it stopped. */
+  const stoppedError = (error: unknown): EngineError =>
+    isAbortError(error) ? abortError() : runtimeStopError(selection.backend, error);
 
   const tokenize = wllama.tokenize
     ? async (text: string): Promise<number> => {
-        const ids = await wllama.tokenize!(text);
+        if (stopCause) throw stoppedError(stopCause.error);
+        let ids: number[] | number;
+        try {
+          ids = await Promise.race([stopReported, wllama.tokenize!(text)]);
+        } catch (error) {
+          if (isRuntimeDead(error)) noteStop(error);
+          else if (!isAbortError(error)) throw error;
+          throw stoppedError(error);
+        }
         if (Array.isArray(ids)) return Math.max(1, ids.length);
         const counted = Number(ids);
         return Number.isFinite(counted) && counted >= 1 ? Math.ceil(counted) : 1;
@@ -333,15 +448,20 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
     threads: selection.nThreads,
     parallel: selection.nParallel,
     ...(tokenize ? { tokenize } : {}),
+    get stopped(): boolean {
+      return stopCause !== null;
+    },
     async complete(request: CompletionRequest): Promise<CompletionResult> {
       let hitMaxTokens = false;
       await gate.exclusive(async () => {
         if (request.signal.aborted) throw abortError();
+        if (stopCause) throw stoppedError(stopCause.error);
+        request.onStart?.();
         try {
           let emitted = 0;
           let finishReason: string | null = null;
           await Promise.race([
-            lost,
+            stopReported,
             wllama.createCompletion({
               prompt: request.prompt,
               max_tokens: request.maxTokens,
@@ -364,19 +484,22 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
           hitMaxTokens =
             finishReason === 'length' || (finishReason !== 'stop' && emitted >= request.maxTokens);
         } catch (error) {
+          // Recorded even for a request that was cancelled meanwhile, so the next one does not
+          // start on the stopped worker.
+          if (isRuntimeDead(error)) noteStop(error);
           if (isAbortError(error) || request.signal.aborted) throw abortError();
-          if (selection.backend === 'webgpu' && isRuntimeDead(error)) {
-            reportLoss(error);
-            throw new EngineError('gpu-lost', 'The GPU stopped working.', { cause: error });
-          }
+          if (isRuntimeDead(error)) throw runtimeStopError(selection.backend, error);
           throw new EngineError('model-load-failed', 'The translation request failed.', {
             cause: error,
           });
         }
-      });
+      }, request.alone === true);
       return { hitMaxTokens };
     },
     async dispose(): Promise<void> {
+      // Terminating the worker leaves its pending calls unanswered. They end as aborted, so a
+      // request running when the tier or the model changes is not left waiting forever.
+      noteStop(abortError('The translation runtime was released.'));
       await wllama.exit();
     },
   };

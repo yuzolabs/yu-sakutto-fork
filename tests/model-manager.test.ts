@@ -436,6 +436,19 @@ describe('ModelManager', () => {
     expect(await manager.status(ENTRY.id)).toMatchObject({ state: 'loaded' });
   });
 
+  it('loads a new runtime when the loaded one has stopped', async () => {
+    const { manager, createRuntime } = await downloadedManager();
+    const first = await manager.ensureLoaded(ENTRY.id, SELECTION);
+    (first.runtime as FakeRuntime).stopped = true;
+
+    const second = await manager.ensureLoaded(ENTRY.id, SELECTION);
+
+    expect(createRuntime).toHaveBeenCalledTimes(2);
+    expect(second.runtime).not.toBe(first.runtime);
+    expect((first.runtime as FakeRuntime).disposed).toBe(true);
+    expect(manager.loadedModel?.runtime).toBe(second.runtime);
+  });
+
   it('unloads the runtime and can load it again', async () => {
     const { manager, createRuntime } = await downloadedManager();
     const loaded = await manager.ensureLoaded(ENTRY.id, SELECTION);
