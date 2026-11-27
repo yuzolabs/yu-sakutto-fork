@@ -521,12 +521,25 @@ interface PostedMessage {
 async function runWorkerCalls(source: string): Promise<PostedMessage[]> {
   const heap = new ArrayBuffer(64 * 1024);
   const heapBytes = new Uint8Array(heap);
+  // Before the patch the worker runs new Uint8Array(outputLen) with the magic number 1163217991
+  // as the length. A 64-bit Node would reserve 1.08 GiB for it, or fail with another message
+  // where that is refused, so a length beyond this heap throws here as it does for a view of it.
+  const boundedUint8Array = new Proxy(Uint8Array, {
+    construct(target, args) {
+      const [length] = args;
+      if (args.length === 1 && typeof length === 'number' && length > heap.byteLength) {
+        throw new RangeError(`Invalid typed array length: ${length}`);
+      }
+      return Reflect.construct(target, args, target);
+    },
+  });
 
   const posted: PostedMessage[] = [];
   const sandbox: Record<string, unknown> = {
     // the worker's own postMessage wrapper
     msg: (data: PostedMessage) => posted.push(data),
     getHeapU8: () => heapBytes,
+    Uint8Array: boundedUint8Array,
     toSizeT: (size: number) => BigInt(size),
     isAborted: false,
     wllamaMalloc: async () => 1024n,
