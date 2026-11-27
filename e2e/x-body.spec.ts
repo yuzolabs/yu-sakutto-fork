@@ -348,6 +348,7 @@ test.describe('X post translation', () => {
         'Nothing leaves the browser.',
         'It keeps working offline.',
         'A laptop running the model without a network.',
+        'A closing paragraph that is long enough',
       ]) {
         await expect(
           article.locator('[data-block="true"]', { hasText: text }).last(),

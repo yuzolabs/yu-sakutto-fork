@@ -115,6 +115,7 @@ describe('X text roots', () => {
       'It keeps working offline.',
       'A laptop running the model without a network.',
       '最後の段落は日本語で書かれています。',
+      'A closing paragraph that is long enough to read as prose by its length alone, the way a whole-page translation ranks a block, so that the order it is translated in shows whether the short blocks above it are treated the same.',
     ]);
     const joined = rootTexts().join('\n');
     expect(joined).not.toContain('Kappa Author');
