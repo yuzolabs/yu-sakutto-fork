@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Diese Seite ist bereits in der Zielsprache verfasst."
   },
+  "xBodyStop": {
+    "message": "X-Post-Übersetzung stoppen"
+  },
+  "xBodyResume": {
+    "message": "X-Post-Übersetzung fortsetzen"
+  },
+  "xBodyProgress": {
+    "message": "X-Posts werden übersetzt $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Fortschritt der X-Post-Übersetzung"
+  },
+  "xBodyDone": {
+    "message": "Die X-Posts auf dem Bildschirm sind übersetzt."
+  },
+  "xBodyPartial": {
+    "message": "$BLOCKS$ X-Posts konnten nicht übersetzt werden.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "Auf x.com werden nur Post-Texte, Community Notes und Artikel übersetzt, nicht die gesamte Seite."
+  },
+  "xBodyPausedHint": {
+    "message": "Die X-Post-Übersetzung ist in diesem Tab gestoppt. Grok-Übersetzungen werden weiterhin durch das Original ersetzt. Sie startet wieder, wenn die Seite neu geladen wird."
+  },
   "displaySiteHint": {
     "message": "Diese Auswahl wird für die Website gespeichert."
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "Der Zugriff auf YouTube und X wurde nicht gewährt."
+  },
+  "xBodySetting": {
+    "message": "X-Post-Übersetzung"
+  },
+  "xBodySettingHelp": {
+    "message": "Übersetzt Post-Texte, Community Notes und Artikel auf x.com automatisch, wenn sie nicht in der Zielsprache sind. Wenn X eine Grok-Übersetzung zeigt und X auf Englisch oder Japanisch angezeigt wird, drückt Sakutto in diesem Tab pro Eintrag einmal auf „Show original“ von X und übersetzt das Original. Die Einstellungen des X-Kontos werden nicht geändert. Chrome fragt beim Einschalten nach Zugriff auf x.com."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Der Zugriff auf x.com wurde nicht erlaubt, daher bleibt die X-Post-Übersetzung ausgeschaltet."
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "Originalzeile anzeigen"

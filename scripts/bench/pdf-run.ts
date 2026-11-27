@@ -23,6 +23,7 @@ import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
 
+import { chromeExtensionDir } from '../extension-output.ts';
 import {
   MODEL_FILE,
   ROOT,
@@ -313,10 +314,11 @@ async function main(): Promise<void> {
     external !== undefined ? basename(external) : fixture === 'scan' ? 'scan.pdf' : 'paper.pdf';
 
   await ensureModel(MODEL_PATH);
-  const extension = await stageExtension('.output/chrome-mv3');
-  if (!existsSync(join(extension, 'manifest.json'))) {
-    throw new Error('No built extension. Run "pnpm bench:build:live" first.');
+  const built = chromeExtensionDir(ROOT, 'fixture');
+  if (!existsSync(join(built, 'manifest.json'))) {
+    throw new Error(`No built extension at ${built}. Run "pnpm bench:build:live" first.`);
   }
+  const extension = await stageExtension(built);
 
   // A PDF given as `--file` is served from its own directory, so a local file outside the
   // tree can be measured with the same harness. Everything else is served from the committed

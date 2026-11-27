@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>Home / X</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 0;
+        display: flex;
+        gap: 24px;
+      }
+      main {
+        width: 600px;
+      }
+      aside {
+        width: 320px;
+      }
+      article[data-testid='tweet'] {
+        display: block;
+        border-bottom: 1px solid #ddd;
+        padding: 12px;
+      }
+      [data-testid='User-Name'],
+      [data-testid='birdwatch-pivot'],
+      [data-testid='card.wrapper'],
+      [data-testid='cardPoll'],
+      .card {
+        display: flex;
+        flex-direction: column;
+      }
+      div[role='link'] {
+        border: 1px solid #ccc;
+        padding: 8px;
+        margin-top: 8px;
+      }
+      [data-testid='article-cover-image'] {
+        width: 120px;
+        height: 60px;
+        background: #eee;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Synthetic x.com timeline. The element structure follows x.com's own markup around post
+      text, Grok's translation row, quoted posts, Community Notes and article previews. Every
+      name and every text is made up.
+    -->
+    <nav aria-label="Primary">
+      <a href="/home" data-testid="AppTabBar_Home_Link"><span>Home timeline</span></a>
+      <a href="/explore" data-testid="AppTabBar_Explore_Link"><span>Explore the feed</span></a>
+    </nav>
+    <main data-testid="primaryColumn">
+      <div aria-label="Timeline: Your Home Timeline">
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-grok">
+            <div data-testid="User-Name">
+              <a href="/fixture_alpha" role="link"><span>Alpha Writer</span></a>
+              <a href="/fixture_alpha/status/1001" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">1h</time></a
+              >
+            </div>
+            <div>
+              <div dir="ltr">
+                <svg viewBox="0 0 33 32" aria-hidden="true">
+                  <g><path d="M1 1h2v2H1z"></path></g>
+                </svg>
+                <span>英語からの翻訳</span>
+                <button aria-label="原文を表示" role="button" type="button">
+                  <span
+                    ><div>
+                      <span><span>原文を表示</span></span>
+                    </div></span
+                  >
+                </button>
+              </div>
+              <div
+                dir="auto"
+                lang="ja"
+                data-testid="tweetText"
+                data-fixture-original="The original post is written in English."
+                data-fixture-original-lang="en"
+              >
+                <span>元のポストは英語で書かれています。</span>
+              </div>
+            </div>
+            <div role="group" aria-label="2 replies">
+              <button data-testid="reply" aria-label="Reply" type="button"><span>2</span></button>
+              <button data-testid="like" aria-label="Like" type="button"><span>5</span></button>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-japanese">
+            <div data-testid="User-Name">
+              <a href="/fixture_beta" role="link"><span>Beta Writer</span></a>
+              <a href="/fixture_beta/status/1002" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">2h</time></a
+              >
+            </div>
+            <div>
+              <div dir="auto" lang="ja" data-testid="tweetText">
+                <span>これは最初から日本語で書かれたポストです。</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-untranslated">
+            <div data-testid="User-Name">
+              <a href="/fixture_gamma" role="link"><span>Gamma Writer</span></a>
+              <a href="/fixture_gamma/status/1003" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">3h</time></a
+              >
+            </div>
+            <div>
+              <div dir="auto" lang="en" data-testid="tweetText">
+                <span>X left this English post as it was written. </span
+                ><a href="/hashtag/fixture" dir="ltr" role="link">#fixture</a>
+              </div>
+              <button dir="ltr" role="button" data-testid="tweet-text-show-more-link" type="button">
+                <span>さらに表示</span>
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-quote">
+            <div data-testid="User-Name">
+              <a href="/fixture_delta" role="link"><span>Delta Writer</span></a>
+              <a href="/fixture_delta/status/1004" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">4h</time></a
+              >
+            </div>
+            <div>
+              <div dir="auto" lang="ja" data-testid="tweetText">
+                <span>引用元のポストを紹介します。</span>
+              </div>
+            </div>
+            <div role="link" tabindex="0" data-fixture="quote-grok">
+              <div data-testid="User-Name">
+                <span>Epsilon Writer</span>
+                <div dir="ltr"><time datetime="2026-01-01T00:00:00.000Z">5h</time></div>
+              </div>
+              <div>
+                <div dir="ltr">
+                  <svg viewBox="0 0 33 32" aria-hidden="true">
+                    <g><path d="M1 1h2v2H1z"></path></g>
+                  </svg>
+                  <span>英語からの翻訳</span>
+                </div>
+                <div dir="auto" lang="ja" data-testid="tweetText">
+                  <span>引用されたポストは Grok が日本語に訳したものです。</span>
+                </div>
+              </div>
+            </div>
+            <div role="link" tabindex="0" data-fixture="quote-foreign">
+              <div data-testid="User-Name">
+                <span>Zeta Writer</span>
+                <div dir="ltr"><time datetime="2026-01-01T00:00:00.000Z">6h</time></div>
+              </div>
+              <div>
+                <div dir="auto" lang="en" data-testid="tweetText">
+                  <span>This quoted post was never translated by X.</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-note">
+            <div data-testid="User-Name">
+              <a href="/fixture_eta" role="link"><span>Eta Writer</span></a>
+              <a href="/fixture_eta/status/1005" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">7h</time></a
+              >
+            </div>
+            <div>
+              <div dir="ltr">
+                <svg viewBox="0 0 33 32" aria-hidden="true">
+                  <g><path d="M1 1h2v2H1z"></path></g>
+                </svg>
+                <span><span>中国語からの翻訳</span></span>
+                <button aria-label="原文を表示" role="button" type="button">
+                  <span
+                    ><div>
+                      <span><span>原文を表示</span></span>
+                    </div></span
+                  >
+                </button>
+              </div>
+              <div
+                dir="auto"
+                lang="ja"
+                data-testid="tweetText"
+                data-fixture-original="这是一条用中文写的帖子。"
+                data-fixture-original-lang="zh"
+              >
+                <span>これは中国語で書かれたポストです。</span>
+              </div>
+            </div>
+            <div tabindex="0" data-testid="birdwatch-pivot" role="link">
+              <div>
+                <div>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <g><path d="M1 1h2v2H1z"></path></g>
+                  </svg>
+                  <div dir="ltr"><span>閲覧したユーザーが背景情報を追加しました:</span></div>
+                </div>
+              </div>
+              <span></span>
+              <div>
+                <div dir="ltr">
+                  <svg viewBox="0 0 33 32" aria-hidden="true">
+                    <g><path d="M1 1h2v2H1z"></path></g>
+                  </svg>
+                  <span><span>英語からの翻訳</span></span>
+                  <button aria-label="原文を表示" role="button" type="button">
+                    <span
+                      ><div>
+                        <span><span>原文を表示</span></span>
+                      </div></span
+                    >
+                  </button>
+                </div>
+              </div>
+              <div
+                dir="ltr"
+                data-fixture-original="Readers noted that the quoted figure leaves out the second survey."
+                data-fixture-original-lang="en"
+              >
+                <span>読者は、引用された数字には2回目の調査が含まれていないと指摘しました。</span>
+              </div>
+              <span></span>
+              <div>
+                <div dir="ltr"><span>役に立ちましたか？</span></div>
+                <div role="link" tabindex="0"><span>評価する</span></div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-article-preview">
+            <div data-testid="User-Name">
+              <a href="/fixture_theta" role="link"><span>Theta Writer</span></a>
+              <a href="/fixture_theta/status/1006" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">8h</time></a
+              >
+            </div>
+            <div>
+              <div dir="auto" lang="ja" data-testid="tweetText">
+                <span>新しい記事を書きました。</span>
+              </div>
+            </div>
+            <div class="card">
+              <div data-testid="article-cover-image">
+                <div aria-label="記事のカバー画像"><img alt="記事のカバー画像" src="" /></div>
+                <div dir="ltr">
+                  <div aria-label="記事" role="img">
+                    <span dir="ltr" aria-hidden="true">Article</span>
+                  </div>
+                </div>
+              </div>
+              <div class="preview-text">
+                <div>
+                  <div dir="auto"><span>How small models translate on a laptop</span></div>
+                </div>
+                <div dir="auto">
+                  <span>A short look at running a translation model locally.</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-cards">
+            <div data-testid="User-Name">
+              <a href="/fixture_iota" role="link"><span>Iota Writer</span></a>
+              <a href="/fixture_iota/status/1007" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">9h</time></a
+              >
+            </div>
+            <div>
+              <div dir="auto" lang="ja" data-testid="tweetText">
+                <span>投票とリンクです。</span>
+              </div>
+            </div>
+            <div data-testid="cardPoll">
+              <div><span>Option one for the poll</span></div>
+              <div><span>Option two for the poll</span></div>
+            </div>
+            <div data-testid="card.wrapper">
+              <a href="https://example.com/news" role="link">
+                <div><span>An outside news headline written in English</span></div>
+              </a>
+            </div>
+            <div data-testid="tweetPhoto">
+              <img alt="A photo description written in English" src="" />
+            </div>
+          </article>
+        </div>
+
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet" role="article" tabindex="0" id="post-multiline">
+            <div data-testid="User-Name">
+              <a href="/fixture_lambda" role="link"><span>Lambda Writer</span></a>
+              <a href="/fixture_lambda/status/1008" role="link"
+                ><time datetime="2026-01-01T00:00:00.000Z">10h</time></a
+              >
+            </div>
+            <div>
+              <!--
+                A multi-line post. X keeps its newlines as literal characters in the text node
+                and paints them through white-space, with no <br>. `&#10;` is that newline
+                character, written so the fixture's own indentation stays out of the text.
+              -->
+              <div dir="auto" lang="en" data-testid="tweetText">
+                <span style="white-space: break-spaces"
+                  >Shipping today.&#10;&#10;Thanks to all testers.&#10;</span
+                ><a href="/hashtag/release" dir="ltr" role="link">#release</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </main>
+    <aside data-testid="sidebarColumn">
+      <section aria-label="Trending">
+        <div data-testid="trend"><span>Trending topic written in English</span></div>
+        <div data-testid="trend"><span>Another trending phrase in English</span></div>
+      </section>
+    </aside>
+    <script id="x-fixture-toggle">
+      // Mimics X's own translation toggle: "原文を表示" swaps in the original text and its
+      // language and turns into "翻訳を表示", which swaps the Grok translation back. Every
+      // press is counted on <html> so a test can tell how often each item was pressed.
+      (function (doc) {
+        const SHOW_ORIGINAL = '原文を表示';
+        const SHOW_TRANSLATION = '翻訳を表示';
+
+        function textFor(row) {
+          if (
+            row.nextElementSibling &&
+            row.nextElementSibling.matches('[data-testid="tweetText"]')
+          ) {
+            return row.nextElementSibling;
+          }
+          const wrapper = row.parentElement;
+          const note = wrapper && wrapper.parentElement;
+          if (note && note.matches('[data-testid="birdwatch-pivot"]')) {
+            for (const child of note.children) {
+              if (child.localName === 'div' && child.hasAttribute('dir')) return child;
+            }
+          }
+          return null;
+        }
+
+        function setLabel(button, label) {
+          button.setAttribute('aria-label', label);
+          const inner = button.querySelector('span span span') || button;
+          inner.textContent = label;
+        }
+
+        function record(id) {
+          const root = doc.documentElement;
+          const log = JSON.parse(root.dataset.fixturePresses || '{}');
+          log[id] = (log[id] || 0) + 1;
+          root.dataset.fixturePresses = JSON.stringify(log);
+        }
+
+        doc.addEventListener('click', function (event) {
+          const button =
+            event.target && event.target.closest
+              ? event.target.closest('button[aria-label]')
+              : null;
+          if (!button) return;
+          const label = button.getAttribute('aria-label');
+          if (label !== SHOW_ORIGINAL && label !== SHOW_TRANSLATION) return;
+          const row = button.parentElement;
+          const text = row && textFor(row);
+          if (!text) return;
+          const article = button.closest('article');
+          const kind = text.matches('[data-testid="tweetText"]') ? 'post' : 'note';
+          const id = (article ? article.id : 'unknown') + ':' + kind;
+          if (label === SHOW_ORIGINAL) {
+            record(id);
+            text.dataset.fixtureTranslation = text.textContent.trim();
+            text.dataset.fixtureTranslationLang = text.getAttribute('lang') || '';
+            const from = row.querySelector(':scope > span');
+            if (from) {
+              text.dataset.fixtureFrom = from.textContent;
+              from.remove();
+            }
+            text.innerHTML = '';
+            const span = doc.createElement('span');
+            span.textContent = text.dataset.fixtureOriginal;
+            text.append(span);
+            if (text.matches('[data-testid="tweetText"]')) {
+              text.setAttribute('lang', text.dataset.fixtureOriginalLang);
+            }
+            setLabel(button, SHOW_TRANSLATION);
+            return;
+          }
+          text.innerHTML = '';
+          const span = doc.createElement('span');
+          span.textContent = text.dataset.fixtureTranslation;
+          text.append(span);
+          if (text.matches('[data-testid="tweetText"]')) {
+            text.setAttribute('lang', text.dataset.fixtureTranslationLang || 'ja');
+          }
+          if (text.dataset.fixtureFrom) {
+            const from = doc.createElement('span');
+            from.textContent = text.dataset.fixtureFrom;
+            row.insertBefore(from, button);
+          }
+          setLabel(button, SHOW_ORIGINAL);
+        });
+      })(document);
+    </script>
+  </body>
+</html>

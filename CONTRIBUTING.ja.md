@@ -6,7 +6,7 @@ Sakutto は MIT です。[LICENSE](LICENSE) と [NOTICE](NOTICE) を参照して
 
 まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、その Issue に対して pull request を出す、という順を歓迎します。できるなら PR をとても歓迎します。Issue だけでも十分です。コードを書かなくても構いません。小さな PR で足ります。誤字、1 つの言語、ドキュメント、範囲の狭い修正で構いません。
 
-使い方の質問は [Discord](https://discord.gg/pdSRBaSr38) の方が早いことがあります。Issue や pull request に、非公開ページの本文、認証情報、個人情報を貼らないでください。脆弱性は [SECURITY.md](SECURITY.md) です。
+使い方の質問は [質問の Issue フォーム](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose) に送ってください。Issue や pull request に、非公開ページの本文、認証情報、個人情報を貼らないでください。脆弱性は [SECURITY.md](SECURITY.md) です。
 
 `help wanted` は外部の助けを求めている印です。`good first issue` は小さくて着手しやすい課題です。どちらも PR を歓迎する印です。
 
@@ -49,7 +49,9 @@ pnpm build          # 成果物は .output/chrome-mv3
 pnpm build:firefox  # Firefox 153 以降。成果物は .output/firefox-mv3
 ```
 
-`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージをビルドします。これはリリース用のビルドではありません。Firefox は `about:debugging` から `.output/firefox-mv3/manifest.json` を読みます。[docs/FIREFOX.md](docs/FIREFOX.md) を参照してください。
+`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージを `.output/fixture/chrome-mv3` にビルドします。`scripts/extension-output.ts` の規則では、`SAKUTTO_FAKE_ENGINE=1` または `SAKUTTO_E2E_REAL=1` を設定したビルドはすべてこのディレクトリに出力されるため、`pnpm test:e2e` はブラウザに読み込んでいる `.output/chrome-mv3` を上書きしません。`.output/chrome-mv3` をパッケージ化されていない拡張機能として読み込んだブラウザは、新しく開いたタブにもディスク上の内容をそのまま使うので、このディレクトリはリリース用のビルドのままにしておく必要があります。テスト用パッケージはリリース用のビルドではありません。同じ規則は `pnpm build` にも当てはまります。シェルに `SAKUTTO_FAKE_ENGINE=1` や `SAKUTTO_E2E_REAL=1` がエクスポートされたままだと、`pnpm build` でも `.output/fixture/chrome-mv3` に書き出され、テスト用のホスト権限が付与されます。**パッケージ化されていない拡張機能を読み込む** 用に `pnpm build` を実行するときは、どちらも設定されていないシェルから実行してください。
+
+Firefox は `about:debugging` から `.output/firefox-mv3/manifest.json` を読みます。[docs/FIREFOX.md](docs/FIREFOX.md) を参照してください。
 
 ## 実際にあるコマンド
 

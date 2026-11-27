@@ -9,6 +9,7 @@ import type {
 import type { BackendSelection } from './backend';
 import { InBrowserEngine, type InBrowserEngineOptions } from './engine';
 import type { LlamaRuntime } from './runtime';
+import { RuntimeCrashLedger } from './runtime-crash-ledger';
 
 export interface LoadedRuntime {
   runtime: LlamaRuntime;
@@ -25,13 +26,26 @@ export interface LazyInBrowserEngineOptions {
   /**
    * Runs once before the next load. `lost` reloads the same selection the first
    * time. `degenerate` leaves WebGPU after several distinct collapsed pieces.
+   * `error` is the `gpu-lost` error of the request that saw the loss first.
    */
-  onGpuLost?: (reason: 'lost' | 'degenerate') => Promise<void>;
+  onGpuLost?: (reason: 'lost' | 'degenerate', error?: unknown) => Promise<void>;
+  /**
+   * Runs once before the next load after the runtime stopped without losing the GPU device,
+   * such as a JS exception inside the wllama worker. The host drops the stopped runtime and
+   * keeps the selection: a runtime crash does not count as a lost GPU.
+   */
+  onRuntimeCrash?: (error: unknown) => Promise<void>;
   config?: InBrowserEngineOptions['config'];
 }
 
 /** Enough to walk reload, four slots, CPU, even if every step loses the GPU again. */
 const MAX_GPU_RECOVERIES = 3;
+/**
+ * Runtime crash restarts one translate call waits through before it hands the error back. A
+ * piece that crashes the runtime takes two: one with the other pieces that were running, then
+ * one while it runs alone, after which it is not sent again.
+ */
+const MAX_RUNTIME_RESTARTS = 3;
 
 export class LazyInBrowserEngine implements IdentifiedEngine {
   readonly kind = 'plamo' as const;
@@ -44,18 +58,33 @@ export class LazyInBrowserEngine implements IdentifiedEngine {
   private recovery: Promise<void> | null = null;
   private degenerateBlocks = 0;
   private needSessionFallback = false;
+  /** Kept across the runtime restarts and lost-GPU reloads of one session; cleared by `reset`. */
+  private readonly crashLedger = new RuntimeCrashLedger();
 
   constructor(private readonly options: LazyInBrowserEngineOptions) {}
 
-  /** Drops the engine after the runtime is released so the next request loads a fresh one. */
+  /**
+   * Drops the engine after the runtime is released so the next request loads a fresh one. A
+   * new tier, a new model or an idle release also gives a piece that crashed the runtime
+   * another try.
+   */
   reset(): void {
+    this.resetSession();
+    this.crashLedger.clear();
+  }
+
+  private resetSession(): void {
+    this.dropEngine();
+    this.degenerateBlocks = 0;
+    this.needSessionFallback = false;
+  }
+
+  private dropEngine(): void {
     this.generation += 1;
     this.loadController?.abort();
     this.loadController = null;
     this.engine = null;
     this.engineTask = null;
-    this.degenerateBlocks = 0;
-    this.needSessionFallback = false;
   }
 
   async *translate(
@@ -65,7 +94,9 @@ export class LazyInBrowserEngine implements IdentifiedEngine {
     let pending = segments;
     const streamed = new Set<string>();
 
-    for (let recoveries = 0; ; recoveries += 1) {
+    let gpuRecoveries = 0;
+    let runtimeRestarts = 0;
+    for (;;) {
       const engine = await this.getEngine(options);
       const restarting = new Set(streamed);
       try {
@@ -83,21 +114,49 @@ export class LazyInBrowserEngine implements IdentifiedEngine {
         if (this.needSessionFallback) await this.recover(engine, 'degenerate');
         return;
       } catch (error) {
-        const lost = isEngineError(error) && error.code === 'gpu-lost';
-        if (!lost || options.signal.aborted || recoveries >= MAX_GPU_RECOVERIES) {
+        if (options.signal.aborted || !isEngineError(error)) throw error;
+        if (error.code === 'gpu-lost' && gpuRecoveries < MAX_GPU_RECOVERIES) {
+          gpuRecoveries += 1;
+          await this.recover(engine, 'lost', error);
+        } else if (error.code === 'runtime-crashed' && runtimeRestarts < MAX_RUNTIME_RESTARTS) {
+          runtimeRestarts += 1;
+          await this.restartRuntime(engine, error);
+        } else {
           throw error;
         }
-        await this.recover(engine, 'lost');
         if (pending.length === 0) return;
       }
     }
   }
 
+  /**
+   * Every request on a crashed runtime lands here; only the first one drops its engine and asks
+   * the host to release it. The next load then starts a new runtime on the same selection.
+   */
+  private restartRuntime(crashed: InBrowserEngine, error: unknown): Promise<void> {
+    const onRuntimeCrash = this.options.onRuntimeCrash;
+    if (this.engine === crashed) {
+      this.dropEngine();
+      if (onRuntimeCrash) {
+        this.recovery = onRuntimeCrash(error).finally(() => {
+          this.recovery = null;
+        });
+      }
+    }
+    return this.recovery ?? Promise.resolve();
+  }
+
   /** Every request running on the lost GPU lands here; only the first one does the work. */
-  private recover(lost: InBrowserEngine, reason: 'lost' | 'degenerate'): Promise<void> {
-    if (this.engine === lost && this.options.onGpuLost) {
-      this.reset();
-      this.recovery = this.options.onGpuLost(reason).finally(() => {
+  private recover(
+    lost: InBrowserEngine,
+    reason: 'lost' | 'degenerate',
+    error?: unknown,
+  ): Promise<void> {
+    const onGpuLost = this.options.onGpuLost;
+    if (this.engine === lost && onGpuLost) {
+      this.resetSession();
+      const leaving = error === undefined ? onGpuLost(reason) : onGpuLost(reason, error);
+      this.recovery = leaving.finally(() => {
         this.recovery = null;
       });
     }
@@ -169,6 +228,7 @@ export class LazyInBrowserEngine implements IdentifiedEngine {
       contextTokens: Math.floor(loaded.selection.nCtx / Math.max(1, loaded.selection.nParallel)),
       ...(this.options.config ? { config: this.options.config } : {}),
       ...(this.options.loadRetryRuntime ? { loadRetryRuntime: this.options.loadRetryRuntime } : {}),
+      crashLedger: this.crashLedger,
       onDegenerateBlock: () => {
         this.degenerateBlocks += 1;
         if (this.degenerateBlocks >= DEGENERATE_SESSION_BLOCKS) this.needSessionFallback = true;

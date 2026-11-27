@@ -31,6 +31,7 @@
     revokeCaptionCustomHostAccess,
   } from '@/captions/register-custom';
   import { resolveCaptionToggle } from '@/captions/sites';
+  import { resolveXBodyToggle, xBodySupported } from '@/dom/x-body/sites';
   import {
     hasAllSitesAccess,
     requestAllSitesAccess,
@@ -42,6 +43,9 @@
   import { displayTargetLanguage } from './language-label';
 
   let captionDenied = $state(false);
+  let xBodyDenied = $state(false);
+  /** X post translation exists only in the Chrome build; Firefox never shows the setting. */
+  const showXBody = xBodySupported();
   let mailDenied = $state(false);
   let allSitesGranted = $state<boolean | null>(null);
   let allSitesDenied = $state(false);
@@ -623,6 +627,38 @@
         </ul>
       {/if}
     </div>
+  {/if}
+
+  {#if showXBody}
+    <label class="check">
+      <input
+        type="checkbox"
+        data-sakutto="x-body"
+        checked={settings.translateXBody}
+        onchange={(event) => {
+          const input = event.currentTarget as HTMLInputElement;
+          xBodyDenied = false;
+          void (async () => {
+            // User gesture: resolveXBodyToggle must call permissions.request with no prior pause.
+            const result = await resolveXBodyToggle(input.checked);
+            input.checked = result.on;
+            if (result.denied) {
+              xBodyDenied = true;
+              onPermissionDenied?.();
+              return;
+            }
+            onChange({ translateXBody: result.on });
+          })();
+        }}
+      />
+      <span>{t('xBodySetting')}</span>
+    </label>
+    {#if xBodyDenied}
+      <p class="error" role="alert" data-sakutto="x-body-denied">
+        {t('xBodyPermissionDenied')}
+      </p>
+    {/if}
+    <p class="muted help">{t('xBodySettingHelp')}</p>
   {/if}
 </div>
 

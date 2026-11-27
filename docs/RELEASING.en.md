@@ -16,6 +16,10 @@ The command refuses a dirty tree, including untracked files, and any branch othe
 git push origin main vX.Y.Z
 ```
 
-Pushing that tag runs `.github/workflows/release.yml`. Pull requests do not run it. The workflow checks the tag against `package.json` and `CHANGELOG.md`, runs the same lint, format, typecheck, unit, and e2e checks as CI (with `fetch-depth: 0` so `tests/bench-fixtures.test.ts` can see history), then runs the existing package action with `from-source: true`. That action compiles wllama from source rather than restoring the CI wasm cache, runs `pnpm zip` (including the package audit), and smoke-tests the worker. The workflow then checks the built manifest version and opens a draft GitHub Release with the Chrome zip attached and the changelog section as the notes. See [CI.md](CI.md).
+Pushing that tag runs `.github/workflows/release.yml`. Pull requests do not run it.
+
+You can also start it by hand: open Actions, choose Release, select Run workflow, and enter the tag in `tag`. The tag must already be pushed. On a manual run the workflow file comes from the branch selected in the Actions tab, and the code comes from the tag.
+
+The workflow checks the tag against `package.json` and `CHANGELOG.md`, runs the same lint, format, typecheck, unit, and e2e checks as CI (with `fetch-depth: 0` so `tests/bench-fixtures.test.ts` can see history), then runs the existing package action with `from-source: true`. That action compiles wllama from source rather than restoring the CI wasm cache, runs `pnpm zip` (including the package audit), and smoke-tests the worker. The workflow then checks the built manifest version and opens a draft GitHub Release with the Chrome zip attached and the changelog section as the notes. See [CI.md](CI.md).
 
 The model stored in OPFS is not downloaded again on an extension update unless the model changes. An extension update keeps the extension id, so the origin and its OPFS directory (`sakutto`, from `navigator.storage.getDirectory()`) remain. The saved file stays ready while its SHA-256 and size match `src/engine/model/catalog.ts`. A new catalog hash or size, or a delete by the user, downloads the model again. An unpacked extension with a different id does not share that storage.

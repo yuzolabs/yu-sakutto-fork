@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { normalizeParallel } from '../../src/engine/local-server/url.ts';
+import { chromeExtensionDir } from '../extension-output.ts';
 import { ROOT, arg, has, log, type BenchTier } from './host.ts';
 import { runPageBench, type BenchMode } from './pages-runner.ts';
 
@@ -25,7 +26,7 @@ async function main(): Promise<void> {
   const runMode = mode();
   const samplesArg = Number(arg('--samples') ?? '1');
 
-  const extension = resolve(arg('--extension') ?? resolve(ROOT, '.output/chrome-mv3'));
+  const extension = resolve(arg('--extension') ?? chromeExtensionDir(ROOT, 'fixture'));
   if (!existsSync(resolve(extension, 'manifest.json'))) {
     throw new Error(
       `No built extension at ${extension}. Run "pnpm bench:build:mock" (or "pnpm bench:build:live") first.`,

@@ -3,6 +3,7 @@ import {
   CONTEXT_TOKENS,
   cpuFallback,
   GPU_LOSS_WINDOW_MS,
+  GpuLossHistory,
   isGpuLoadFallback,
   lighterSelection,
   refillsFreeSlots,
@@ -193,6 +194,29 @@ describe('stepping down after a GPU failure', () => {
   it('steps down when the GPU is lost again soon after', () => {
     expect(selectionAfterGpuLoss(wide, GPU_LOSS_WINDOW_MS - 1)).toEqual(plain);
     expect(selectionAfterGpuLoss(plain, 1000)).toMatchObject({ backend: 'webgpu', nParallel: 1 });
+  });
+
+  it('remembers the previous loss across calls', () => {
+    let now = 1_000_000;
+    const history = new GpuLossHistory(() => now);
+
+    expect(history.recordLoss(wide)).toBe(wide);
+    now += GPU_LOSS_WINDOW_MS - 1;
+    expect(history.recordLoss(wide)).toEqual(plain);
+    now += GPU_LOSS_WINDOW_MS;
+    expect(history.recordLoss(plain)).toBe(plain);
+  });
+
+  it('forgets earlier losses when asked to', () => {
+    let now = 1_000_000;
+    const history = new GpuLossHistory(() => now);
+
+    history.recordLoss(wide);
+    history.forgetLosses();
+    now += 1000;
+    expect(history.recordLoss(wide)).toBe(wide);
+    now += 1000;
+    expect(history.recordLoss(wide)).toEqual(plain);
   });
 
   it('does not treat a manual CPU choice as a GPU failure', () => {

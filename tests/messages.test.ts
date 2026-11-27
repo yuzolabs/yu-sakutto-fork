@@ -383,6 +383,14 @@ describe('page view state contract', () => {
     expect(isPageViewState({ ...base, skipped: '2' })).toBe(false);
   });
 
+  it('carries the X post translation scope and stop flag the popup words its button with', () => {
+    expect(isPageViewState({ ...base, skipped: 0, scope: 'x-body' })).toBe(true);
+    expect(isPageViewState({ ...base, skipped: 0, scope: 'page' })).toBe(true);
+    expect(isPageViewState({ ...base, skipped: 0, scope: 'x-body', stopped: true })).toBe(true);
+    expect(isPageViewState({ ...base, skipped: 0, scope: 3 })).toBe(false);
+    expect(isPageViewState({ ...base, skipped: 0, stopped: 'yes' })).toBe(false);
+  });
+
   it('rejects a state that is missing a required field', () => {
     const { total, ...missing } = base;
     expect(total).toBe(3);

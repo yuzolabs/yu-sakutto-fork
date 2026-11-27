@@ -6,7 +6,7 @@ Sakutto is MIT-licensed. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Please fol
 
 The usual path is an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue. That sequence is fully welcome. If you can, a PR is very much wanted. An Issue by itself is also totally welcome — you do not have to write code. Small PRs are enough: a typo, one locale, a docs fix, or a narrow bug fix.
 
-Questions are often faster in [Discord](https://discord.gg/pdSRBaSr38). Do not paste private page content, credentials, or personal data into issues or pull requests. Security issues: [SECURITY.md](SECURITY.md).
+Send usage questions to the [Question issue form](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose). Do not paste private page content, credentials, or personal data into issues or pull requests. Security issues: [SECURITY.md](SECURITY.md).
 
 `help wanted` means outside help is wanted. `good first issue` is a small, well-scoped task. Either label is an invitation to open a PR.
 
@@ -49,7 +49,9 @@ pnpm build          # production build in .output/chrome-mv3
 pnpm build:firefox  # Firefox 153+ in .output/firefox-mv3
 ```
 
-`pnpm test:e2e` builds a separate package that translates inside the page. That package is not the release build. Firefox is loaded from `about:debugging` with `.output/firefox-mv3/manifest.json`; see [docs/FIREFOX.md](docs/FIREFOX.md).
+`pnpm test:e2e` builds a separate test package into `.output/fixture/chrome-mv3`, the directory that `scripts/extension-output.ts` picks for every build run with `SAKUTTO_FAKE_ENGINE=1` or `SAKUTTO_E2E_REAL=1`. It therefore does not overwrite `.output/chrome-mv3`: a browser that has `.output/chrome-mv3` loaded as an unpacked extension keeps serving whatever is on disk to newly opened tabs, so that directory has to stay the release build. The test package translates inside the page and is not the release build. The same rule applies to `pnpm build`: if `SAKUTTO_FAKE_ENGINE=1` or `SAKUTTO_E2E_REAL=1` is still exported in your shell, even `pnpm build` writes to `.output/fixture/chrome-mv3` and includes the test host permissions, so run `pnpm build` for **Load unpacked** from a shell without those variables.
+
+Firefox is loaded from `about:debugging` with `.output/firefox-mv3/manifest.json`; see [docs/FIREFOX.md](docs/FIREFOX.md).
 
 ## Commands that exist
 

@@ -3,8 +3,8 @@
 The extension runs PLaMo 3 Translate with a pinned wllama build. The published npm package
 (`@wllama/wllama` 3.8.1) cannot load the PLaMo 3 tokenizer, so the extension ships its own build of
 [ngxson/wllama](https://github.com/ngxson/wllama) at commit `d275dac` (llama.cpp `5aeac37`,
-2026-10-18) with two MV3 patches, one build-flag patch, two run-time patches, a Dawn
-download retry, and two WebGPU adapter/device patches.
+2026-10-18). The patches in `scripts/wllama/patches/` cover MV3 loading, build flags, request
+state, WebGPU device and shader behaviour, and the handling of results and failed actions.
 
 ## Requirements
 
@@ -41,8 +41,8 @@ The script runs these steps:
 `pnpm build:wllama` deletes `public/vendor/wllama/` before it starts, so a failed build never leaves
 the previous wasm in the next package. `pnpm verify:wllama` checks `wllama-build.json` against both
 the dist and the public copies (byte count, SHA-256, extra or missing files) and is part of
-`pnpm build` and `pnpm zip`. `pnpm test:e2e` builds a separate package that translates in the page
-and does not require the wasm artifacts.
+`pnpm build` and `pnpm zip`. `pnpm test:e2e` builds a separate package into
+`.output/fixture/chrome-mv3` that translates in the page and does not require the wasm artifacts.
 
 ## Outputs
 
@@ -729,6 +729,197 @@ finished that page and the next two on WebGPU (two runs).
   NaN, and in a skipped tile it no longer does.
 - The Docker build and Firefox, as for `0010`.
 
+## Safe UTF-8 in streamed results
+
+`0017-get-result-safe-utf8.patch` changes `action_get_result` in `cpp/wllama-context.h`.
+
+A generated token can hold a byte that is not valid UTF-8 on its own. PLaMo 3 Translate has
+256 byte-fallback tokens, listed as `<0x80>` through `<0xFF>` and then `<0x00>` through `<0x7F>`
+(token ids 128 to 511); while translating an X article the model picked `<0xA2>` (id 162) right
+after "Lyria 3 Pro / 3.5". llama.cpp's server only holds back a character cut off at the end of
+the generated text (`validate_utf8` in `tools/server/server-common.cpp` checks the last four bytes
+for a lead byte lacking its continuation bytes), so a lone continuation byte enters the partial
+result. `dump()` then threw `[json.exception.type_error.316] invalid UTF-8 byte at index 0: 0xA2`.
+
+### What the patch changes
+
+`res.data_json.value = result ? data_json.dump() : "";` becomes
+`res.data_json.value = result ? safe_json_to_str(data_json) : "";`. `safe_json_to_str()` is what
+the llama.cpp HTTP server uses to serialize the same results (`tools/server/server-common.cpp`);
+it writes U+FFFD in place of each byte that is not valid UTF-8 instead of throwing.
+
+Sakutto does not treat U+FFFD specially: no output check looks for it, so a replacement character
+passes into the translated text and is shown on the page. The degenerate-output checks look for
+repeated pieces and are not triggered by one replacement character in a paragraph.
+
+Patch `0017` is the `get_result` part of ngxson/wllama#376, applied to the pinned source `d275dac`
+(the tokenize and detokenize actions that commit also changed do not exist at the pin).
+`tests/wllama-build.test.ts` checks the content of the patch, and `scripts/wllama/build.ts`
+checks a marker line after applying the patches.
+
+### Measurements (2026-11-27)
+
+Measured on Windows 11 in BrowserOS neo (Chromium 155, an NVIDIA GPU of the lovelace
+generation with `shader-f16` and subgroups of 32, 24 logical cores) with PLaMo 3 Translate 0.8B
+Q4_K_M. Both wasm builds (JSPI/memory64 and compat) compiled in Docker with
+`emscripten/emsdk:4.0.20`; `pnpm verify:wllama` passed, and `pnpm wllama:check` applied all 18
+patches.
+
+On a local COOP/COEP test page running the real model with `logit_bias: {"162": 100}` at
+temperature 0 (object form), the previous build (`0001`–`0016`) failed every request with
+`type_error.316`. In the new build (`0001`–`0018`), all requests finished, the one made to start
+with `<0xA2>` returned twelve U+FFFD, the others returned their normal text, and the native log
+showed no error; see the table under patch `0018` below.
+
+In an unpacked build of this tree with X body translation on,
+`https://x.com/GeekCatX/status/2125933350330515724` translated to the end with the new build: 118
+of 118 blocks, state `translated` 23 s after page load, 211.9 tok/s at the end (the WebGPU tier's
+aggregate rate; the CPU tier runs one sequence near 43 tok/s, see the `0003` section). The
+paragraph that used to stop after "Lyria 3 Pro / 3.5" now reads "3.5", one U+FFFD, then
+"軌作曲）と合わせて、…". Loaded again afterwards, the previous build translated the page a second
+time without meeting the byte: either that paragraph came from the translation cache of the first
+run or the requests were composed differently and the model did not pick the byte, so the page
+is not a deterministic reproduction — the test page with `logit_bias` is.
+
+### What was not measured
+
+- The compat (asyncify) wasm in a browser; it was compiled from the same sources, but no browser
+  without JSPI was run.
+- Firefox, and any GPU other than the NVIDIA card above.
+- `engine:status` during the extension run: the automation could not open extension pages, so the
+  backend is read from the rate and the absence of a restart, not from the status message.
+
+## Error responses for failed actions
+
+`0018-failed-action-error-response.patch` is ngxson/wllama#343, applied to the pinned source.
+Together with patch `0017`, the upstream fixes are already in place here, so upstream does not
+need a separate report for this failure.
+
+Before, `wllama_action` logged the exception and returned a null pointer without writing the
+response length. The worker read the length from the first four bytes of the request, where the
+protocol's magic number `0x45554C47` (1163217991) still sat, and tried to build a view of
+1163217991 bytes. That `RangeError` went through `handleError` as a `signal.abort`, and the main
+thread rejected every queued and waiting task with `WllamaRuntimeError` (`RuntimeError`). With
+sixteen requests streaming, one bad request failed all sixteen. At the time, `isRuntimeDead` in
+`src/engine/in-browser/runtime.ts` read that `RuntimeError` as a dead runtime and Sakutto reported
+a lost GPU; it unloaded and reloaded the model, and a second loss within 120 s
+(`selectionAfterGpuLoss` in `src/engine/in-browser/backend.ts`) moved it to a lighter selection
+(four WebGPU slots, then one, then the CPU).
+
+Sakutto now tells that `exception`-type `RuntimeError` apart from a lost GPU device
+(`isGpuDeviceLoss` and `runtimeStopError` in `src/engine/in-browser/runtime.ts`).
+`isGpuDeviceLoss` only counts wasm aborts (`(ABORT)` from wllama's `onRecvMsg` for an `abort`-type
+`signal.abort`, emscripten's `Aborted(`, or the worker's `wllama has crashed` reply) or error text
+naming a lost/failed device or WebGPU (`device is lost`/`device was lost`, ggml-webgpu `Device
+lost!`/`Device error!`, `DXGI_ERROR_DEVICE_*`, `VK_ERROR_DEVICE_LOST`, `WebGPU`, `ggml_webgpu`, or
+a WebGPU interface name such as `GPUBuffer`). A JS exception inside the worker (`signal.abort` of
+type `exception`, without `(ABORT)`) that names none of those — such as
+`RangeError: Invalid typed array length: 1163217991` — does not count: it raises `runtime-crashed`
+instead of `gpu-lost`, fails the other requests on that runtime (`LlamaRuntime.stopped`), drops the
+engine (`LazyInBrowserEngine` in `src/engine/in-browser/lazy-engine.ts`) and unloads the stopped
+runtime (`EngineHost` in `src/engine/offscreen/host.ts`), and restarts a new runtime on the same
+selection (up to 3 restarts per translate call) without counting toward stepping down. When WebGPU
+does hit a device loss, `gpu-lost` still reloads the same selection first and steps down on a
+second loss within 120 s (`GpuLossHistory` in `src/engine/in-browser/backend.ts`; setting the tier
+again forgets earlier losses), and `gpuDiagnostic.error` keeps the runtime's failure text when a
+lost GPU moves the model to the CPU.
+
+Because a crash fails every request running on the runtime without saying which piece caused it,
+resending the same pieces after each restart used to crash every new runtime until
+`MAX_RUNTIME_RESTARTS` (3 per translate call in `src/engine/in-browser/lazy-engine.ts`) ran out
+and failed every piece of that call. To isolate a piece that keeps crashing the worker,
+`LazyInBrowserEngine` holds a `RuntimeCrashLedger` (`src/engine/in-browser/runtime-crash-ledger.ts`)
+and hands it to each `InBrowserEngine` it creates (`crashLedger` option in
+`src/engine/in-browser/engine.ts`), so the ledger outlives the engine across runtime restarts and
+lost-GPU reloads in one session. Every piece that had actually started on the runtime when it
+crashes with `runtime-crashed` becomes a suspect: the runtime reports the start through
+`CompletionRequest.onStart` (`src/engine/in-browser/runtime.ts`), while a request turned away
+because the runtime had already stopped never started and marks nothing, so pieces waiting behind
+the culprit are not blamed. On the next runtime, a suspect runs alone (`InBrowserEngine` sets
+`CompletionRequest.alone`, and `CompletionGate` waits until every running completion finishes and
+keeps other completions waiting while it runs, starting waiting tasks in the order they asked so
+later tasks do not overtake one waiting to run alone). A suspect whose completion finishes is
+cleared; if the runtime crashes while it runs alone, it becomes a culprit and `InBrowserEngine`
+returns its source text marked `error: true` without sending it again (and `CachingEngine` in
+`src/engine/cache/caching-engine.ts` does not store results marked `error: true`), so the other
+pieces are translated as usual after two of the call's three restarts (one with the other running
+pieces and one alone).
+
+The ledger keys each piece by target language, source language, and sanitized source text
+(`runtimeCrashKey` in `src/engine/in-browser/engine.ts`), and each of its two sets (suspects and
+culprits) keeps at most 256 entries (`MAX_LEDGER_ENTRIES`), dropping the oldest. Only
+`runtime-crashed` marks the ledger (`gpu-lost` does not, and lost-GPU recovery keeps it), while
+`LazyInBrowserEngine.reset()`—called by the host on a tier change, a model change, and an idle
+release—clears it so the piece gets another try afterwards. `tests/runtime-crash-ledger.test.ts`,
+`tests/completion-gate.test.ts`, `tests/lazy-engine.test.ts` (describe "LazyInBrowserEngine with a
+piece that crashes the runtime"), and `tests/offscreen-runtime-recovery.test.ts` (describe
+"offscreen host with a paragraph that keeps crashing the runtime") cover the ledger,
+`CompletionGate`'s `alone` ordering, and a persistently crashing paragraph ending with its source
+text and `error: true` while WebGPU stays on 16 slots and asking for it again sends nothing and
+loads nothing.
+
+### What the patch changes
+
+In `cpp/wllama.cpp`, the `catch` of `wllama_action` now answers with `glue_msg_error` (`erro_evt`,
+already defined in `cpp/glue.hpp`) carrying the exception text and writes the response length like
+a normal answer, keeping the null pointer only when even that answer cannot be built. In
+`src/worker.ts`, `wllamaAction` turns an `erro_evt` result into
+`throw new WllamaError(parsedResult.message, 'inference_error')`. In
+`src/workers-code/llama-cpp.js`, when `outputPtr` is null, `runAction` posts
+`{ callbackId, err: 'Action "<name>" failed, see the native log' }` and returns so `handleError`
+(`signal.abort`) is not reached.
+
+Only the call that failed rejects, with a typed `WllamaError`. wllama's `getResponse` cancels the
+request in its `finally` to release its slot, the other requests keep streaming, and the backend
+stays on WebGPU. Patch `0018` itself needed no Sakutto change for this case: `isRuntimeDead`
+already treats a typed `WllamaError` as a live runtime and only a string or a `RuntimeError` as
+dead.
+
+In the rare fallback where even `erro_evt` cannot be built and `wllama_action` returns a null
+pointer, the worker posts `err` as a plain string for that call alone. The main thread rejects that
+call with the string (`Action "<name>" failed, see the native log`), which `isRuntimeDead` treats as
+a stopped runtime. Because that string names neither a wasm abort nor a GPU device,
+`runtimeStopError` emits `runtime-crashed` on WebGPU and on the CPU alike: on every backend, the
+first call to see the stop fails every other call in flight on that runtime, later calls fail at
+once without reaching the worker (`LlamaRuntime.stopped`), `ModelManager.ensureLoaded`
+(`src/engine/model/manager.ts`) never hands out a stopped runtime again, and the next load starts a
+new runtime on the same selection without counting toward stepping down.
+
+`tests/wllama-build.test.ts` checks the patch content and runs the pinned worker call queue and
+action runner against a fake wasm: unpatched, a null pointer posts `signal.abort` with
+`RangeError: Invalid typed array length: 1163217991`; with the `0018` hunk applied via
+`git apply`, the same call posts `err` for its own callback id only and the next queued call
+completes. `scripts/wllama/build.ts` checks a marker line of each new hunk after applying patches,
+along with two `PATCH_MARKERS` entries for `src/workers-code/llama-cpp.js`
+(`wasmCallQueue.length = 0;` in `runWasmCall`'s `finally` and
+`args: ['exception', message, stack, err],` in `handleError`). Together with the `0018` hunk's
+context, those two lines make `pnpm wllama:check` fail when a pin bump changes the queue cleanup
+after an abort or the `signal.abort` arguments in the worker code that `tests/wllama-build.test.ts`
+copies; the rest of the copy has to be compared by hand after a pin bump.
+
+### Measurements (2026-11-27)
+
+Same environment and builds as for `0017`. On the local COOP/COEP test page (WebGPU = 16 slots, 8
+threads, `n_ctx` 16384, `"using device WebGPU"`, `"offloaded 17/17 layers to GPU"`; CPU = 1 slot,
+8 threads):
+
+| Build                | Backend | Streaming requests (sixteen on WebGPU, one on CPU), one made to start with `<0xA2>`                                                                                                                                                              | A wrong-type `get_result` action while requests stream (sixteen on WebGPU, one on CPU)                                                 |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| previous (0001–0016) | WebGPU  | 0 of 16 finish. Log shows `[json.exception.type_error.316] invalid UTF-8 byte at index 0: 0xA2` then `RangeError: Invalid typed array length: 1163217991`, and every request rejects with `RuntimeError: Invalid typed array length: 1163217991` | 0 of 16 finish; the action rejects with the same `RuntimeError`                                                                        |
+| previous (0001–0016) | CPU     | 0 of 1 finish, same two log lines and the same rejection                                                                                                                                                                                         | 0 of 1 finish, same                                                                                                                    |
+| new (0001–0018)      | WebGPU  | 16 of 16 finish; the biased one returns twelve U+FFFD; no native error line                                                                                                                                                                      | 16 of 16 finish; the action alone rejects with a `WllamaError` of type `inference_error`: `Prototype ID mismatch cncl_req != gres_req` |
+| new (0001–0018)      | CPU     | 1 of 1 finishes, twelve U+FFFD, no native error line                                                                                                                                                                                             | 1 of 1 finishes, the same `WllamaError`                                                                                                |
+
+In both builds a plain completion after each run still returned text: the worker process stayed
+alive. What failed in the previous build was every request in flight on the main thread, which
+Sakutto read as a lost GPU at the time; Sakutto now restarts the runtime on the same selection
+instead.
+
+### What was not measured
+
+As for `0017`: the compat wasm in a browser, Firefox, any other GPU, and `engine:status` during
+the extension run.
+
 ## Compatibility builds
 
 `needCompat()` (missing JSPI or memory64) selects the compat files automatically. The compat build
@@ -775,6 +966,16 @@ Firefox job runs `pnpm zip:firefox`, `web-ext lint` (0 errors), and a second bui
   `core.autocrlf=false` in the checkout before fetching and checks the patch targets out as LF. A
   checkout created by an older version of the script can still hold CRLF files; delete
   `vendor/wllama/.checkout` and retry.
+- `error: unable to create file tools/ui/…: Filename too long`, `unable to unlink old` under
+  `tools/ui/`, or (left behind by an older script version) a later run stopping with
+  `llama.cpp checkout is at …, expected …` on Windows: `vendor/wllama/.checkout/llama.cpp/…`
+  exceeded the 260-character `MAX_PATH` limit in a deep directory or a worktree with a long branch
+  name while checking out llama.cpp's unused web UI. The build script passes `core.longpaths=true`
+  to every git call (including the submodule clone and checkout), and runs the submodule update
+  again whenever `llama.cpp` is not at the pinned commit, so running the command again finishes a
+  checkout that stopped part way; the reset step also repairs `unable to unlink old` on a checkout
+  already at the pin. If it still fails, delete `vendor/wllama/.checkout` (it is only a cache) and
+  run it once more.
 - An old `vendor/wllama/checkout` directory is no longer used. Delete it so `svelte-check` does not
   crawl the upstream Svelte examples.
 - On Apple Silicon and Windows on ARM the script uses the `4.0.20-arm64` emsdk tag.

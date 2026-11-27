@@ -436,7 +436,14 @@ export class ModelManager {
     options: { signal?: AbortSignal } = {},
   ): Promise<LoadedModel> {
     const run = async (): Promise<LoadedModel> => {
-      if (this.loaded && this.matchesLoaded(this.loaded, modelId, selection)) return this.loaded;
+      // A stopped runtime fails every call, so the same selection loads a new one.
+      if (
+        this.loaded &&
+        this.loaded.runtime.stopped !== true &&
+        this.matchesLoaded(this.loaded, modelId, selection)
+      ) {
+        return this.loaded;
+      }
       if (options.signal?.aborted) throw abortError();
 
       await this.unload();

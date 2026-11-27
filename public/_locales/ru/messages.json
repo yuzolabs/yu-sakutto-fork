@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "На этой странице уже написано на целевом языке."
   },
+  "xBodyStop": {
+    "message": "Остановить перевод постов X"
+  },
+  "xBodyResume": {
+    "message": "Возобновить перевод постов X"
+  },
+  "xBodyProgress": {
+    "message": "Перевод постов X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Ход перевода постов X"
+  },
+  "xBodyDone": {
+    "message": "Посты X на экране переведены."
+  },
+  "xBodyPartial": {
+    "message": "Не удалось перевести постов X: $BLOCKS$.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "На x.com переводятся только тексты постов, заметки сообщества и статьи, а не вся страница."
+  },
+  "xBodyPausedHint": {
+    "message": "Перевод постов X в этой вкладке остановлен. Переводы Grok по-прежнему заменяются оригиналом. Он снова запустится после перезагрузки страницы."
+  },
   "displaySiteHint": {
     "message": "Этот выбор запоминается для сайта."
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "Доступ к YouTube и X не был предоставлен."
+  },
+  "xBodySetting": {
+    "message": "Перевод постов X"
+  },
+  "xBodySettingHelp": {
+    "message": "Автоматически переводит тексты постов, заметки сообщества и статьи на x.com, если они не на целевом языке. Когда X показывает перевод Grok, а интерфейс X на английском или японском, Sakutto один раз для каждого элемента в этой вкладке нажимает «Show original» в X и переводит оригинал. Настройки аккаунта X не меняются. При включении Chrome запросит доступ к x.com."
+  },
+  "xBodyPermissionDenied": {
+    "message": "Доступ к x.com не предоставлен, поэтому перевод постов X остаётся выключенным."
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "Показывать исходную строку"

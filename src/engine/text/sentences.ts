@@ -223,10 +223,18 @@ function mergeUnbalanced(chunks: readonly string[]): string[] {
   return merged;
 }
 
+/**
+ * A split inside CJK text or at whitespace. Used only inside one placeholder span whose
+ * text alone is longer than a prompt; see `findSplitIndex`.
+ */
+const DEEP_BREAK = /\s|[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+
 function findSplitIndex(text: string, limit: number): number {
   let depth = 0;
   let bestSpace = -1;
+  let bestTag = -1;
   let bestSafe = -1;
+  let deepBreak = -1;
   let index = 0;
 
   while (index < text.length) {
@@ -236,22 +244,38 @@ function findSplitIndex(text: string, limit: number): number {
         const tag = text.slice(index, end + 1);
         if (/^<\/[A-Za-z][\w-]*\d*>$/u.test(tag)) {
           depth = Math.max(0, depth - 1);
-        } else if (/^<[A-Za-z][\w-]*\d*>$/u.test(tag)) {
-          depth += 1;
+        } else {
+          // A tag that starts at depth zero begins a new inline element, so the position
+          // keeps the tag and its pair together in the next piece. X tiles a long post with
+          // adjacent spans, which leaves these positions as the only depth-zero split
+          // points; skipping them, as the tag branch otherwise does, made such a post one
+          // unsplittable segment.
+          if (depth === 0 && index <= limit && index > 0) bestTag = index;
+          if (/^<[A-Za-z][\w-]*\d*>$/u.test(tag)) depth += 1;
         }
         index = end + 1;
         continue;
       }
     }
 
-    if (depth === 0 && index <= limit && index > 0) {
-      bestSafe = index;
-      if (/\s/u.test(text[index] ?? '')) bestSpace = index;
+    if (index <= limit && index > 0) {
+      if (depth === 0) {
+        bestSafe = index;
+        if (/\s/u.test(text[index] ?? '')) bestSpace = index;
+      } else if (DEEP_BREAK.test(text[index] ?? '')) {
+        // One placeholder span can hold several paragraphs, far more than one prompt. A
+        // split between its words (or between CJK characters) still translates the text;
+        // the dangling tags of the two halves reunite when the pieces are joined again.
+        deepBreak = index;
+      }
     }
     index += 1;
   }
 
-  return bestSpace > 0 ? bestSpace : bestSafe;
+  if (bestSpace > 0) return bestSpace;
+  if (bestTag > 0) return bestTag;
+  if (deepBreak > 0) return deepBreak;
+  return bestSafe;
 }
 
 function splitLongChunk(chunk: string, maxChunkChars: number): string[] {
@@ -274,7 +298,8 @@ function splitLongChunk(chunk: string, maxChunkChars: number): string[] {
 
 /**
  * Splits a paragraph that is longer than the sentence threshold. Placeholder tags are kept
- * inside one piece and hard splits happen only at tag depth zero.
+ * inside one piece and hard splits happen only at tag depth zero, at a depth-zero tag
+ * start, or between words inside one span that alone is longer than the chunk.
  */
 export function splitForTranslation(text: string, options: SentenceSplitOptions = {}): string[] {
   const sentenceThreshold = options.sentenceThreshold ?? DEFAULT_SENTENCE_THRESHOLD;

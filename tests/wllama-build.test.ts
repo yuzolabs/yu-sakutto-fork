@@ -1,4 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
@@ -345,5 +348,259 @@ bool ggml_webgpu_correctness_probe(webgpu_context ctx) {
     expect(patch).toContain('defines.push_back("MAX_SUBGROUP_SIZE="');
     expect(patch).not.toContain('wgsl_flash_attn_vec');
     expect(patch).not.toContain('use_sg_matrix');
+  });
+
+  it('serializes a result with an invalid UTF-8 byte replaced instead of thrown', () => {
+    const patch = readFileSync(
+      new URL('../scripts/wllama/patches/0017-get-result-safe-utf8.patch', import.meta.url),
+      'utf8',
+    );
+    // the serializer the llama.cpp HTTP server uses for the same results: U+FFFD per bad byte
+    expect(patch).toContain(
+      '+    res.data_json.value = result ? safe_json_to_str(data_json) : "";',
+    );
+    expect(patch).toContain('-    res.data_json.value = result ? data_json.dump() : "";');
+    // it is the one line of get_result that leaves the result; the polling change above it stays
+    expect(patch.match(/^@@ /gm)).toHaveLength(1);
+    expect(patch).not.toContain('run_loop()');
+    expect(patch).not.toContain('get_next_result');
+  });
+
+  it('answers a failed action with an error and fails only the call that made it', () => {
+    const patch = readFileSync(
+      new URL('../scripts/wllama/patches/0018-failed-action-error-response.patch', import.meta.url),
+      'utf8',
+    );
+    // the native side answers with the glue error event, not a null pointer without a length
+    expect(patch).toContain('+      glue_msg_error err;');
+    expect(patch).toContain('+      err.message.value = e.what();');
+    expect(patch).toContain('+      err.handler.serialize(output_buffer);');
+    expect(patch).toContain('+      output_len[0] = output_buffer.data.size();');
+    expect(patch).toContain('-    return nullptr;');
+    // the null pointer is kept only for an error that cannot be serialized
+    expect(patch).toContain('+    catch (std::exception &)\n+    {\n+      return nullptr;');
+    // the main thread turns that event into a typed error, which is not a dead runtime
+    expect(patch).toContain("import { WllamaError, WllamaRuntimeError } from './wllama';");
+    expect(patch).toContain("+    if (parsedResult._name === 'erro_evt') {");
+    expect(patch).toContain(
+      "+      throw new WllamaError(parsedResult.message, 'inference_error');",
+    );
+    // the worker reads no length from the request once the pointer is null
+    expect(patch).toContain('+    if (!Number(outputPtr)) {');
+    expect(patch).toContain('+        err: `Action "${argAction}" failed, see the native log`,');
+    const nullCheck = patch.indexOf('+    if (!Number(outputPtr)) {');
+    const readLength = patch.indexOf('const outputLen = new Uint32Array(', nullCheck);
+    expect(readLength).toBeGreaterThan(nullCheck);
+    // an action failure is not a worker abort: the catch that signals abort is untouched
+    expect(patch).not.toMatch(/^[+-].*(handleError|signal\.abort)/m);
+  });
+});
+
+/**
+ * The worker's call queue and action runner, as the pinned source has them before the 0018
+ * patch. The patch's hunk is applied to this text with git, and both versions are then run
+ * against a fake wasm so the difference is seen in what the worker posts, not in the diff.
+ */
+const WORKER_CALL_QUEUE = `
+// re-entering the wasm while a call is suspended (JSPI / asyncify) corrupts its state, so only one call runs at a time and the rest wait in the queue
+let wasmCallBusy = false;
+const wasmCallQueue = [];
+
+const runWasmCall = async (callbackId, fn) => {
+  if (isAborted) {
+    // the wasm is dead, fail fast instead of calling into it
+    msg({ callbackId, err: 'wllama has crashed, please reload the module' });
+    return;
+  }
+  if (wasmCallBusy) {
+    wasmCallQueue.push({ callbackId, fn });
+    return;
+  }
+  wasmCallBusy = true;
+  try {
+    await fn();
+  } finally {
+    wasmCallBusy = false;
+    if (isAborted) {
+      // do not touch the wasm again after it aborted; the main thread already rejected the queued tasks
+      wasmCallQueue.length = 0;
+    } else {
+      const next = wasmCallQueue.shift();
+      if (next) runWasmCall(next.callbackId, next.fn);
+    }
+  }
+};
+
+const runAction = async (data) => {
+  const { args, callbackId } = data;
+  const argAction = args[0];
+  const argEncodedMsg = args[1];
+  try {
+    const inputPtr = await wllamaMalloc(toSizeT(argEncodedMsg.byteLength), 0);
+    // copy data to wasm heap
+    const inputBuffer = new Uint8Array(
+      getHeapU8().buffer,
+      Number(inputPtr),
+      argEncodedMsg.byteLength
+    );
+    inputBuffer.set(argEncodedMsg, 0);
+    const outputPtr = await wllamaAction(argAction, inputPtr);
+    // length of output buffer is written at the first 4 bytes of input buffer
+    const outputLen = new Uint32Array(
+      getHeapU8().buffer,
+      Number(inputPtr),
+      1
+    )[0];
+    // copy the output buffer to JS heap
+    const outputBuffer = new Uint8Array(outputLen);
+    const outputSrcView = new Uint8Array(
+      getHeapU8().buffer,
+      Number(outputPtr),
+      outputLen
+    );
+    outputBuffer.set(outputSrcView, 0); // copy it
+    msg({ callbackId, result: outputBuffer }, [outputBuffer.buffer]);
+  } catch (err) {
+    handleError(err);
+  }
+};
+
+function handleError(err) {
+  // If WASM already aborted, onAbort already sent signal.abort; skip to avoid
+  // re-reporting the resulting WebAssembly.RuntimeError as a JS exception.
+  if (isAborted) return;
+
+  const message = err ? err.message || String(err) : 'Unknown error';
+  const stack = err ? err.stack || String(err) : '';
+  msg({
+    verb: 'signal.abort',
+    args: ['exception', message, stack, err],
+  });
+}
+`;
+
+/** Applies the llama-cpp.js hunk of a patch to a source text, the way the build applies it. */
+function applyWorkerHunk(patch: string, source: string): string {
+  const directory = mkdtempSync(join(tmpdir(), 'sakutto-wllama-worker-'));
+  try {
+    // The include pattern is a patch path, so it keeps forward slashes on every platform.
+    const file = 'src/workers-code/llama-cpp.js';
+    const target = join(directory, file);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, source);
+    writeFileSync(join(directory, 'patch.diff'), patch);
+    const applied = spawnSync(
+      'git',
+      ['apply', '--whitespace=nowarn', `--include=${file}`, 'patch.diff'],
+      { cwd: directory, encoding: 'utf8' },
+    );
+    const patched = readFileSync(target, 'utf8');
+    if (applied.status !== 0 || patched === source) {
+      throw new Error(
+        `the worker hunk does not apply to the pinned worker code: ${applied.stderr}`,
+      );
+    }
+    return patched;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+interface PostedMessage {
+  callbackId?: number;
+  verb?: string;
+  args?: unknown[];
+  err?: string;
+  result?: Uint8Array;
+}
+
+/**
+ * Runs two action calls on the worker code: one whose action answers with a null pointer,
+ * and one that arrives while the first is running. Returns what the worker posted.
+ */
+async function runWorkerCalls(source: string): Promise<PostedMessage[]> {
+  const heap = new ArrayBuffer(64 * 1024);
+  const heapBytes = new Uint8Array(heap);
+  // Before the patch the worker runs new Uint8Array(outputLen) with the magic number 1163217991
+  // as the length. A 64-bit Node would reserve 1.08 GiB for it, or fail with another message
+  // where that is refused, so a length beyond this heap throws here as it does for a view of it.
+  const boundedUint8Array = new Proxy(Uint8Array, {
+    construct(target, args) {
+      const [length] = args;
+      if (args.length === 1 && typeof length === 'number' && length > heap.byteLength) {
+        throw new RangeError(`Invalid typed array length: ${length}`);
+      }
+      return Reflect.construct(target, args, target);
+    },
+  });
+
+  const posted: PostedMessage[] = [];
+  const sandbox: Record<string, unknown> = {
+    // the worker's own postMessage wrapper
+    msg: (data: PostedMessage) => posted.push(data),
+    getHeapU8: () => heapBytes,
+    Uint8Array: boundedUint8Array,
+    toSizeT: (size: number) => BigInt(size),
+    isAborted: false,
+    wllamaMalloc: async () => 1024n,
+    wllamaAction: async (action: string, pointer: bigint) => {
+      if (action === 'get_result') return 0n;
+      // a real answer: the length goes to the first bytes of the request, the body follows
+      new Uint32Array(heap, Number(pointer), 1)[0] = 4;
+      heapBytes.set([71, 76, 85, 69], 4096);
+      return 4096n;
+    },
+    console,
+  };
+  runInNewContext(
+    `${source}
+globalThis.calls = { runWasmCall, runAction };`,
+    sandbox,
+  );
+  const { runWasmCall, runAction } = sandbox.calls as {
+    runWasmCall: (callbackId: number, fn: () => Promise<void>) => Promise<void>;
+    runAction: (data: { args: unknown[]; callbackId: number }) => Promise<void>;
+  };
+
+  // Every request starts with the protocol's magic number. When the native side returned
+  // without writing the response length, that number was still there to be read as one.
+  const request = new Uint8Array(16);
+  request.set([0x47, 0x4c, 0x55, 0x45], 0);
+  const first = runWasmCall(7, () => runAction({ args: ['get_result', request], callbackId: 7 }));
+  void runWasmCall(8, () => runAction({ args: ['cancel', request], callbackId: 8 }));
+  await first;
+  for (let ticks = 0; posted.length < 2 && ticks < 50; ticks += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return posted;
+}
+
+describe('a failed action inside the wllama worker', () => {
+  const patch = readFileSync(
+    new URL('../scripts/wllama/patches/0018-failed-action-error-response.patch', import.meta.url),
+    'utf8',
+  );
+
+  it('used to read the magic number as a length and signal an abort', async () => {
+    const posted = await runWorkerCalls(WORKER_CALL_QUEUE);
+
+    expect(posted).toHaveLength(2);
+    const abort = posted[0];
+    expect(abort).toMatchObject({ verb: 'signal.abort' });
+    expect(abort?.args?.[0]).toBe('exception');
+    expect(String(abort?.args?.[1])).toMatch(/Invalid typed array length: 1163217991/);
+  });
+
+  it('now fails the one call and lets the next one run', async () => {
+    const posted = await runWorkerCalls(applyWorkerHunk(patch, WORKER_CALL_QUEUE));
+
+    expect(posted).toHaveLength(2);
+    expect(posted[0]).toEqual({
+      callbackId: 7,
+      err: 'Action "get_result" failed, see the native log',
+    });
+    expect(posted[1]?.callbackId).toBe(8);
+    expect(posted[1]?.verb).toBeUndefined();
+    expect(Array.from(posted[1]?.result ?? [])).toEqual([71, 76, 85, 69]);
   });
 });

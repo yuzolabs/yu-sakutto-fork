@@ -5,7 +5,6 @@
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="ライセンス: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="最新リリース"></a>
-    <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/stargazers"><img src="https://img.shields.io/github/stars/yuzolabs/yu-sakutto-fork?style=flat&logo=github" alt="GitHub スター"></a>
   </p>
   <img src="docs/images/readme/ja/hero-page-translation.jpg" width="900" alt="Sakutto のポップアップを開いた、翻訳済みのページ">
@@ -26,9 +25,7 @@ PLaMo が対応する 53 言語では、訳文はすべて PLaMo が生成しま
 - [権限](#権限)
 - [開発](#開発)
 - [貢献](#貢献)
-- [支援](#支援)
 - [コントリビューター](#コントリビューター)
-- [スポンサー](#スポンサー)
 - [ライセンス](#ライセンス)
 
 ## Sakutto を選ぶ理由
@@ -85,6 +82,13 @@ PLaMo が対応する 53 言語では、訳文はすべて PLaMo が生成しま
     </td>
     <td width="46%" valign="top">
       <img src="docs/images/readme/ja/video-captions.jpg" width="100%" alt="動画プレーヤーに重ねて表示された翻訳字幕">
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>X本文翻訳</h3>
+      <p><code>x.com</code> で（Chrome のみ）、ポスト本文（返信、引用ポスト、展開した続きを含む）、コミュニティノート、X Articles、記事プレビューを、訳先と異なる言語のときだけ自動で翻訳します。表示名、トレンド、X の画面、投票、記事以外のリンクカード、画像の alt テキストやページ全体は翻訳せず、設定画面で有効にするまでオフです（有効化時に <code>https://x.com/*</code> のみを要求します）。</p>
+      <p>Grok による翻訳が表示されているときは、画面付近の項目ごとに X 自身の「原文を表示」を一度だけ押して（X の表示言語が日本語または英語のとき）原文を PLaMo で翻訳します。X の API 呼び出しやアカウント設定の変更は行わず、ポップアップかページバーでそのタブだけ停止でき、ポップアップから再開できます。再読み込みすると再開します。</p>
     </td>
   </tr>
   <tr>
@@ -189,7 +193,7 @@ PDF を開いて、ポップアップか右クリックメニューから **こ�
 
 ## プライバシー
 
-既定では翻訳は端末の中で行います。Sakutto は、ページの本文、選択範囲、用語集、訳文を開発者へ送りません。アカウント、広告、分析、テレメトリもありません。内蔵エンジンについての拡張機能自身の通信は、Hugging Face からのモデルの取得です。Chrome と Edge の初回は共有フォルダが選ばれていますが、ブラウザ内保存もワンクリックで選べます。Firefox はモデルをブラウザ内に保存し、共有フォルダにある公式モデルを一度だけコピーできます。コピーしたファイルはサイズと SHA-256 で検証します。Chromium で共有フォルダを選ぶと検証済みのモデルをフォルダへ移動し、ブラウザ内保存に戻すとフォルダのファイルを消さずにブラウザ内へコピーします。設定タブで許可し、Chrome なら「サイトアクセス時は常に許可」、Edge なら「アクセスするたびに確認する」（Chromeの「サイトアクセス時は常に許可」にあたる項目で、名前と違って次から確認されません）を選んでください。あとでワンクリックの再許可が必要なこともあります。すでに共有フォルダを使っている人はそのままです。ポリシーは [PRIVACY.md](PRIVACY.md) と https://jammaru.com/sakutto/privacy/ にあります。
+既定では翻訳は端末の中で行います。Sakutto は、ページの本文、選択範囲、用語集、訳文を開発者へ送りません。アカウント、広告、分析、テレメトリもありません。内蔵エンジンについての拡張機能自身の通信は、Hugging Face からのモデルの取得です。Chrome と Edge の初回は共有フォルダが選ばれていますが、ブラウザ内保存もワンクリックで選べます。Firefox はモデルをブラウザ内に保存し、共有フォルダにある公式モデルを一度だけコピーできます。コピーしたファイルはサイズと SHA-256 で検証します。Chromium で共有フォルダを選ぶと検証済みのモデルをフォルダへ移動し、ブラウザ内保存に戻すとフォルダのファイルを消さずにブラウザ内へコピーします。設定タブで許可し、Chrome なら「サイトアクセス時は常に許可」、Edge なら「アクセスするたびに確認する」（Chromeの「サイトアクセス時は常に許可」にあたる項目で、名前と違って次から確認されません）を選んでください。あとでワンクリックの再許可が必要なこともあります。すでに共有フォルダを使っている人はそのままです。ポリシーは [PRIVACY.md](PRIVACY.md) にあります。
 
 内蔵エンジンについての拡張機能自身の通信は、次のものだけです。
 
@@ -197,7 +201,7 @@ PDF を開いて、ポップアップか右クリックメニューから **こ�
 - PDF のファイルを、そのタブがすでに表示しているサイトから、そのタブの Cookie 付きで取得。
 - 実験的なローカルサーバーをオンにしたときだけ、設定したアドレスへのリクエスト。
 
-モデルのファイルは同梱していません。設定画面からモデルを削除し、翻訳キャッシュを消せます。全文は [PRIVACY.md](PRIVACY.md) または <https://jammaru.com/sakutto/privacy/> にあります。
+モデルのファイルは同梱していません。設定画面からモデルを削除し、翻訳キャッシュを消せます。全文は [PRIVACY.md](PRIVACY.md) にあります。
 
 ## 権限
 
@@ -210,7 +214,7 @@ PDF を開いて、ポップアップか右クリックメニューから **こ�
 | `scripting`        | 翻訳を依頼したタブに content script を注入します。                         |
 | `contextMenus`     | 右クリックメニューにページ・選択範囲・PDF の翻訳を追加します。             |
 
-リリース版ではインストール時のホスト権限を要求しません。`https://*/*` と `http://*/*` の任意ホスト権限は、あるサイトの自動翻訳をオンにしたとき、動画の字幕翻訳を有効にしたとき、独自の字幕サイトを追加したとき、または Gmail / Outlook のメールバナーを有効にしたときだけ要求します。すべてのサイトへの権限は要求しません。PDF リーダーは権限を追加しません。`activeTab` で認められた取得元からファイルを読むだけです。ローカルサーバーへのアクセスも任意です。
+リリース版ではインストール時のホスト権限を要求しません。`https://*/*` と `http://*/*` の任意ホスト権限は、あるサイトの自動翻訳をオンにしたとき、動画の字幕翻訳を有効にしたとき、独自の字幕サイトを追加したとき、Gmail / Outlook のメールバナーを有効にしたとき、または X本文翻訳を有効にしたとき（この場合は `https://x.com/*` のみ）だけ要求します。すべてのサイトへの権限は要求しません。PDF リーダーは権限を追加しません。`activeTab` で認められた取得元からファイルを読むだけです。ローカルサーバーへのアクセスも任意です。
 
 ## 開発
 
@@ -242,7 +246,7 @@ pnpm zip:firefox    # Firefox 用 zip
 
 `pnpm build` は、ピン留めした `pdfjs-dist` のビルドを先にパッケージへコピーします（`pnpm pdfjs` はその工程だけを実行します）。リーダーは同梱したファイルから pdf.js を読みます。pdf.js は worker、CMap、標準フォントの代替を自分からの相対位置で解決するためです。
 
-`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージをビルドします。これはリリース用のビルドではなく、リリース用のビルドにテスト用の翻訳処理は入りません。
+`pnpm test:e2e` は、ページ内で翻訳するテスト用パッケージを `.output/chrome-mv3` のリリース用ビルドとは別の `.output/fixture/chrome-mv3` にビルドします。リリース用のビルドにテスト用の翻訳処理は入りません。
 
 `pnpm icons` は、`scripts/generate-icons.mjs` から PNG アイコンを作り直します。`pnpm i18n:check` は、`public/_locales` の全カタログを英語と突き合わせ、キー、プレースホルダー、空の文言を検査します。`pnpm i18n:draft <カタログ> <言語>` は、同梱しているのと同じ PLaMo で下書きを作ります。どちらも [docs/TRANSLATING.ja.md](docs/TRANSLATING.ja.md) にあります。
 
@@ -251,7 +255,7 @@ pnpm zip:firefox    # Firefox 用 zip
 <details>
 <summary><strong>ページのベンチマーク</strong></summary>
 
-`pnpm bench` は、ビルドした拡張機能をヘッドレスの Chromium（`--load-extension` を拒否する通常の Chrome の代わりに、Playwright の Chrome for Testing を使います）で読み込み、4 つの固定ローカルページを実際の 0.8B モデルで翻訳します。長い記事、ニュース記事、ドキュメント、クライアント側で描画するページです。最初のトークンまでの時間と出力速度を測る短いエンジン確認も行います。`--pages-only`、`--engine-only`、`--sweep`（スレッド、コンテキスト、バッチサイズ）を渡せます。モデルは SHA-256 の確認後に `bench/.cache/` へキャッシュします。先に `SAKUTTO_E2E_REAL=1 pnpm build` でビルドしてください。結果は `bench/results/` に書き出します。
+`pnpm bench` は、ビルドした拡張機能をヘッドレスの Chromium（`--load-extension` を拒否する通常の Chrome の代わりに、Playwright の Chrome for Testing を使います）で読み込み、4 つの固定ローカルページを実際の 0.8B モデルで翻訳します。長い記事、ニュース記事、ドキュメント、クライアント側で描画するページです。最初のトークンまでの時間と出力速度を測る短いエンジン確認も行います。`--pages-only`、`--engine-only`、`--sweep`（スレッド、コンテキスト、バッチサイズ）を渡せます。モデルは SHA-256 の確認後に `bench/.cache/` へキャッシュします。先に `SAKUTTO_E2E_REAL=1 pnpm build` でビルドしてください。これにより拡張機能が（`.output/chrome-mv3` とは別の）`.output/fixture/chrome-mv3` に書き出され、`pnpm bench` はそこから読み込みます。結果は `bench/results/` に書き出します。
 
 `pnpm bench:mock` と `pnpm bench:live` は、読者が実際に待つ時間をページ単位で測ります。[bench/pages](bench/pages) の 8 つのページは、それぞれ別のコストを切り出しています（長い記事、先頭の 1 段落と長い残り、短いカードの多数、非常に長い 1 段落、サイドバー、混在する UI、記事ヘッダー内の見出し、後から差し込まれる内容）。実行するたびに `bench/history/pages.jsonl` に追記されるので、後のコミットを同じページで前のコミットと比べられます。`pnpm bench:serve` を使うと、そのページを自分のブラウザで開けます。指標、モックと実モデルの違い、ページの追加方法は [bench/README.md](bench/README.md) にあります。
 
@@ -283,26 +287,12 @@ pnpm bench:pdf --keep-cache  # プロファイルに残った訳を再利用
 
 ## 貢献
 
-Issue は歓迎です。pull request はとても歓迎します。まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、できるならその Issue への pull request を出してください。その順を歓迎しますが、Issue だけでも十分です。フォームを使い、非公開ページの本文は貼らないでください。使い方の質問は [Discord](https://discord.gg/pdSRBaSr38) の方が早いことがあります。
+Issue は歓迎です。pull request はとても歓迎します。まず [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) を開き、できるならその Issue への pull request を出してください。その順を歓迎しますが、Issue だけでも十分です。フォームを使い、非公開ページの本文は貼らないでください。使い方の質問は [質問の Issue フォーム](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose) に送ってください。
 
 - [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md)（English: [CONTRIBUTING.md](CONTRIBUTING.md)）
 - [行動規範](CODE_OF_CONDUCT.ja.md)（English: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)）
 - [SECURITY.md](SECURITY.md)
 - 画面の翻訳は [docs/TRANSLATING.ja.md](docs/TRANSLATING.ja.md)
-
-## 支援
-
-Sakutto にマネタイズポイントはありません。完全無料で、広告も有料機能もありません。
-
-そもそも自分がこういう翻訳拡張機能を欲しいと思って作り始めたもので、ありがたいことに思った以上に需要がありそうだったので公開しました。今後も有料化や広告の導入は考えていません。
-
-ただ、継続的に開発していくには時間もコストもかかるので、今回 GitHub Sponsors を開設しました。もし Sakutto を気に入っていただけたら、開発を支援していただけると嬉しいです。
-
-- **月 5 ドル（Supporter）**: Sakutto の継続的な開発を応援していただくプランです。
-- **月 10 ドル（Backer）**: さらに応援していただける方向けのプランです。支援額による機能の違いはありません。
-- **1 回のみ**: 継続的な支払いが不要な場合は、任意の金額を 1 回だけ送れます。
-
-どちらのプランも限定機能や優先サポートはありません。いただいた支援は、新機能の追加や翻訳品質・速度の改善、継続的なメンテナンスに役立てます。もちろん、支援の有無に関係なく、これからも完全無料で使える OSS として開発を続けていきます。 <https://github.com/sponsors/jammaru>
 
 ## コントリビューター
 
@@ -313,18 +303,6 @@ Sakutto にご貢献いただいた皆さん、ありがとうございます。
 <a href="https://github.com/TKY-27"><img src="https://github.com/TKY-27.png?size=120" width="60" height="60" alt="TKY-27" title="TKY-27"></a>
 <a href="https://github.com/4ltena"><img src="https://github.com/4ltena.png?size=120" width="60" height="60" alt="4ltena" title="4ltena"></a>
 <a href="https://github.com/kiyoka"><img src="https://github.com/kiyoka.png?size=120" width="60" height="60" alt="kiyoka" title="kiyoka"></a>
-
-## スポンサー
-
-Sakutto を支援してくださっているスポンサーの皆さん、ありがとうございます。いただいた支援は開発の継続に役立てています。
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/jammaru)
-
-<a href="https://github.com/hykw"><img src="https://github.com/hykw.png?size=120" width="60" height="60" alt="hykw" title="hykw"></a>
-
-<!-- メンテナー向け: スポンサーのアバターをここに追加してください。1 行に 1 人、記入例:
-<a href="https://github.com/USER"><img src="https://github.com/USER.png" width="60" alt="USER"></a>
--->
 
 ## ライセンス
 

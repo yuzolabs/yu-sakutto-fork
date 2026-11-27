@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "Esta página ya está escrita en el idioma objetivo."
   },
+  "xBodyStop": {
+    "message": "Detener la traducción de publicaciones de X"
+  },
+  "xBodyResume": {
+    "message": "Reanudar la traducción de publicaciones de X"
+  },
+  "xBodyProgress": {
+    "message": "Traduciendo publicaciones de X $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "Progreso de la traducción de publicaciones de X"
+  },
+  "xBodyDone": {
+    "message": "Las publicaciones de X en pantalla están traducidas."
+  },
+  "xBodyPartial": {
+    "message": "No se pudieron traducir $BLOCKS$ publicaciones de X.",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "En x.com, solo se traduce el texto de las publicaciones, las Notas de la comunidad y los Artículos, no la página completa."
+  },
+  "xBodyPausedHint": {
+    "message": "La traducción de publicaciones de X está detenida en esta pestaña. Las traducciones de Grok se siguen cambiando al original. Vuelve a empezar al recargar la página."
+  },
   "displaySiteHint": {
     "message": "Esta selección se recuerda para el sitio."
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "No se concedió acceso a YouTube y X."
+  },
+  "xBodySetting": {
+    "message": "Traducción de publicaciones de X"
+  },
+  "xBodySettingHelp": {
+    "message": "Traduce automáticamente el texto de las publicaciones, las Notas de la comunidad y los Artículos de x.com que no estén en el idioma de destino. Cuando X muestra una traducción de Grok y X está en inglés o japonés, Sakutto pulsa «Show original» de X una vez por elemento en esa pestaña y traduce el original. La configuración de la cuenta de X no cambia. Chrome pide acceso a x.com al activar la opción."
+  },
+  "xBodyPermissionDenied": {
+    "message": "No se concedió acceso a x.com, así que la traducción de publicaciones de X sigue desactivada."
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "Mostrar la línea original"

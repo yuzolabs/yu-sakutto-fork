@@ -1,4 +1,5 @@
 import { defineConfig } from 'wxt';
+import { extensionOutputDir, isFixtureBuild } from './scripts/extension-output.ts';
 import { reproducibleEntryStylesheets } from './scripts/reproducible-entry-stylesheets.ts';
 import {
   CHROME_PERMISSIONS,
@@ -9,23 +10,26 @@ import {
   firefoxGeckoSettings,
 } from './src/shared/manifest';
 
-const fixtureHostPermissions =
-  process.env.SAKUTTO_FAKE_ENGINE === '1' || process.env.SAKUTTO_E2E_REAL === '1'
-    ? [
-        'http://127.0.0.1/*',
-        'http://localhost/*',
-        'https://x.com/*',
-        'https://www.x.com/*',
-        // Mail hosts are runtime optional in the release build. The e2e fixture build grants
-        // them at install so the banner specs can open mail pages without a native prompt.
-        ...MAIL_HOST_PATTERNS,
-      ]
-    : [];
+const fixtureHostPermissions = isFixtureBuild()
+  ? [
+      'http://127.0.0.1/*',
+      'http://localhost/*',
+      'https://x.com/*',
+      'https://www.x.com/*',
+      // Mail hosts are runtime optional in the release build. The e2e fixture build grants
+      // them at install so the banner specs can open mail pages without a native prompt.
+      ...MAIL_HOST_PATTERNS,
+    ]
+  : [];
 
 const hostPermissions = [...new Set(fixtureHostPermissions)];
 
 export default defineConfig({
   srcDir: 'src',
+  // The e2e and bench builds write to `.output/fixture`, never over `.output/chrome-mv3`: a
+  // browser may have that directory loaded as an unpacked extension, and it keeps serving
+  // whatever is on disk to new tabs. See `scripts/extension-output.ts`.
+  outDir: extensionOutputDir(),
   modules: ['@wxt-dev/module-svelte'],
   imports: false,
   manifestVersion: 3,

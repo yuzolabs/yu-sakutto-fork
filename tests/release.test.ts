@@ -358,8 +358,10 @@ describe('release workflow', () => {
     expect(workflow).toContain('from-source: true');
     expect(workflow).toContain('fetch-depth: 0');
     expect(workflow).not.toContain('pnpm build:wllama');
-    expect(workflow).toContain('node scripts/release/cli.ts check');
-    expect(workflow).toContain('node scripts/release/cli.ts notes > release-notes.md');
+    expect(workflow).toContain('node scripts/release/cli.ts check --tag "$RELEASE_TAG"');
+    expect(workflow).toContain(
+      'node scripts/release/cli.ts notes --tag "$RELEASE_TAG" > release-notes.md',
+    );
     expect(workflow).toContain('draft: true');
     expect(workflow).toContain('chrome-mv3-zip');
     expect(workflow).toContain('files: dist-zip/*.zip');
@@ -380,6 +382,32 @@ describe('release workflow', () => {
     );
     expect(runSource).not.toContain("'push'");
     expect(runSource).not.toContain('"push"');
+  });
+
+  it('names the tag one way, so a manual run builds the tag it was given', () => {
+    const workflow = normalizeEol(
+      readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'),
+    );
+    // A manual run starts from a branch, where `github.ref` and `github.ref_name` name that
+    // branch. Anything that names the tag has to take the input first. A comment may still
+    // spell the property out.
+    const fallback = '${{ inputs.tag || ';
+    const code = workflow
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    const refs = [...code.matchAll(/github\.ref(?:_name)?(?!\w)/g)];
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(code.slice(ref.index - fallback.length, ref.index)).toBe(fallback);
+    }
+    expect(workflow).toContain('RELEASE_TAG: ${{ inputs.tag || github.ref_name }}');
+    expect(workflow.match(/ref: \$\{\{ env\.RELEASE_TAG \}\}/g)).toHaveLength(3);
+    expect(workflow).toContain(
+      'cli.ts check --manifest .output/chrome-mv3/manifest.json --tag "$RELEASE_TAG"',
+    );
+    expect(workflow).toContain('tag_name: ${{ env.RELEASE_TAG }}');
+    expect(workflow).toContain('name: ${{ env.RELEASE_TAG }}');
   });
 
   it('documents the command, the secrets, and OPFS in both languages', () => {

@@ -7,7 +7,6 @@
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/releases/latest"><img src="https://img.shields.io/github/v/release/yuzolabs/yu-sakutto-fork?label=release" alt="Latest release"></a>
-    <a href="https://discord.gg/pdSRBaSr38"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
     <a href="https://github.com/yuzolabs/yu-sakutto-fork/stargazers"><img src="https://img.shields.io/github/stars/yuzolabs/yu-sakutto-fork?style=flat&logo=github" alt="GitHub stars"></a>
   </p>
   <img src="docs/images/readme/en/hero-page-translation.jpg" width="900" alt="Sakutto translating a page in place, with the popup open">
@@ -28,9 +27,7 @@ For PLaMo's 53 languages, every translated line comes from PLaMo. On Chrome, Chr
 - [Permissions](#permissions)
 - [Development](#development)
 - [Contributing](#contributing)
-- [Support](#support)
 - [Contributors](#contributors)
-- [Sponsors](#sponsors)
 - [Licenses](#licenses)
 
 ## Why Sakutto
@@ -87,6 +84,13 @@ For PLaMo's 53 languages, every translated line comes from PLaMo. On Chrome, Chr
     </td>
     <td width="46%" valign="top">
       <img src="docs/images/readme/en/video-captions.jpg" width="100%" alt="Translated captions over a video player">
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>X post translation</h3>
+      <p>On <code>x.com</code> (Chrome only), Sakutto automatically translates post text (including replies, quoted posts, and "Show more" text), Community Notes, X Articles, and article previews when their language differs from your target, leaving display names, trends, X's interface, polls, other link cards, and image alt text untouched. It is off until you enable it in Settings, which requests access to <code>https://x.com/*</code> only.</p>
+      <p>When X displays a Grok translation instead of the original text, Sakutto clicks X's own "Show original" control once per item near the screen (when X's interface is in Japanese or English) and translates the original with PLaMo, without calling X APIs or changing account settings. You can stop it for the current tab from the popup or the page bar, and resume it from the popup; a reload starts it again.</p>
     </td>
   </tr>
   <tr>
@@ -199,7 +203,7 @@ The built-in engine's own network traffic is limited to:
 - the PDF file, fetched from the site the tab is already showing, with that tab's cookies;
 - requests to an experimental local server, only when you enable it and only to the address you set.
 
-The model file is not bundled. You can remove it and clear the translation cache in Settings. Read the full policy at [PRIVACY.md](PRIVACY.md) or <https://jammaru.com/sakutto/privacy/>.
+The model file is not bundled. You can remove it and clear the translation cache in Settings. Read the full policy in [PRIVACY.md](PRIVACY.md).
 
 ## Permissions
 
@@ -212,7 +216,7 @@ The model file is not bundled. You can remove it and clear the translation cache
 | `scripting`        | Injects the content script into the active tab after you ask for a translation.      |
 | `contextMenus`     | Adds Translate page, Translate selection, and Translate PDF to the right-click menu. |
 
-The release package asks for no install-time host permissions. Optional host permissions (`https://*/*` and `http://*/*`) are requested only when you turn on automatic translation for a site, enable video captions, add a custom caption site, or enable the Gmail/Outlook mail banner. Nothing is granted for every site at install time. The PDF reader adds no permission: it reads the file from the origin the `activeTab` grant already covers. Access to a local server is also optional.
+The release package asks for no install-time host permissions. Optional host permissions (`https://*/*` and `http://*/*`) are requested only when you turn on automatic translation for a site, enable video captions, add a custom caption site, enable the Gmail/Outlook mail banner, or enable X post translation (which requests `https://x.com/*` only). Nothing is granted for every site at install time. The PDF reader adds no permission: it reads the file from the origin the `activeTab` grant already covers. Access to a local server is also optional.
 
 ## Development
 
@@ -244,7 +248,7 @@ pnpm zip:firefox    # Firefox zip
 
 `pnpm build` copies the pinned `pdfjs-dist` build into the package first (`pnpm pdfjs` runs that step alone). The reader loads it from a packaged file because pdf.js resolves its worker, CMaps, and standard font substitutes relative to itself.
 
-`pnpm test:e2e` builds a test package that translates inside the page. That package is not the release build, and the release build does not include the test translator.
+`pnpm test:e2e` builds a test package into `.output/fixture/chrome-mv3`, separate from the release build in `.output/chrome-mv3`. That package translates inside the page; the release build does not include the test translator.
 
 `pnpm icons` regenerates the PNG icons from `scripts/generate-icons.mjs`. `pnpm i18n:check` compares every catalog in `public/_locales` against English for missing keys, placeholder tokens, and empty messages. `pnpm i18n:draft <catalog> <language>` drafts a catalog with the same PLaMo model the extension ships. Both are described in [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
@@ -253,7 +257,7 @@ pnpm zip:firefox    # Firefox zip
 <details>
 <summary><strong>Page benchmarks</strong></summary>
 
-`pnpm bench` loads the built extension in headless Chromium (Playwright's Chrome for Testing build, because branded Chrome refuses `--load-extension`) and translates four fixed local pages with the real 0.8B model: a long article, a news article, a docs page, and a client-rendered page. It also runs a short engine probe for time to first token and output speed. Pass `--pages-only`, `--engine-only`, or `--sweep` (thread, context, and batch sizes). The model is cached under `bench/.cache/` after a SHA-256 check. Build with `SAKUTTO_E2E_REAL=1 pnpm build` first so the harness can script the local pages. Results are written to `bench/results/`.
+`pnpm bench` loads the built extension in headless Chromium (Playwright's Chrome for Testing build, because branded Chrome refuses `--load-extension`) and translates four fixed local pages with the real 0.8B model: a long article, a news article, a docs page, and a client-rendered page. It also runs a short engine probe for time to first token and output speed. Pass `--pages-only`, `--engine-only`, or `--sweep` (thread, context, and batch sizes). The model is cached under `bench/.cache/` after a SHA-256 check. Build with `SAKUTTO_E2E_REAL=1 pnpm build` first so the harness can script the local pages; that writes the extension to `.output/fixture/chrome-mv3` (separate from `.output/chrome-mv3`), and `pnpm bench` loads it from there. Results are written to `bench/results/`.
 
 `pnpm bench:mock` and `pnpm bench:live` measure whole pages the way a reader experiences them, on eight fixtures in [bench/pages](bench/pages) that each isolate a different cost (a long article, a short lead with a long tail, many short cards, one very long paragraph, a sidebar, mixed UI, a headline inside the article header, and late-mounted content). Every run appends to `bench/history/pages.jsonl`, so a later commit can be diffed against an earlier one on the same pages. `pnpm bench:serve` opens those fixtures in your own browser. See [bench/README.md](bench/README.md) for the metrics, the mock-versus-live distinction, and how to add a fixture.
 
@@ -285,26 +289,12 @@ pnpm bench:pdf --keep-cache  # reuse translations already in the profile
 
 ## Contributing
 
-Issues are welcome, and pull requests are very welcome. Open an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue if you can — that path is fully welcome, and an Issue by itself is also enough. Please use the issue forms and do not paste private page content. Questions are often faster in [Discord](https://discord.gg/pdSRBaSr38).
+Issues are welcome, and pull requests are very welcome. Open an [Issue](https://github.com/yuzolabs/yu-sakutto-fork/issues) first, then a pull request for that Issue if you can — that path is fully welcome, and an Issue by itself is also enough. Please use the issue forms and do not paste private page content. Send usage questions to the [Question issue form](https://github.com/yuzolabs/yu-sakutto-fork/issues/new/choose).
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) (日本語: [CONTRIBUTING.ja.md](CONTRIBUTING.ja.md))
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [SECURITY.md](SECURITY.md)
 - [docs/TRANSLATING.md](docs/TRANSLATING.md) for interface translations
-
-## Support
-
-There is no monetisation point in Sakutto. It is completely free, with no ads and no paid features.
-
-I started it because I wanted a translation extension like this myself, and I published it because it turned out to be needed by more people than I expected. I have no plans to charge for it or to add ads.
-
-Continuing development still takes time and money, so I opened GitHub Sponsors. If you like Sakutto, I would be glad of your support.
-
-- **$5 a month (Supporter)**: a plan for cheering on Sakutto's ongoing development.
-- **$10 a month (Backer)**: for anyone who wants to back it further. The amount changes nothing about the software.
-- **One-time**: any amount, once, if a subscription is more than you need.
-
-Neither tier adds limited features or priority support. The money goes towards new features, translation quality and speed, and ongoing maintenance. Whether you sponsor or not, Sakutto stays completely free and open source. <https://github.com/sponsors/jammaru>
 
 ## Contributors
 
@@ -315,18 +305,6 @@ Thank you to everyone who has contributed to Sakutto. Issues and pull requests a
 <a href="https://github.com/TKY-27"><img src="https://github.com/TKY-27.png?size=120" width="60" height="60" alt="TKY-27" title="TKY-27"></a>
 <a href="https://github.com/4ltena"><img src="https://github.com/4ltena.png?size=120" width="60" height="60" alt="4ltena" title="4ltena"></a>
 <a href="https://github.com/kiyoka"><img src="https://github.com/kiyoka.png?size=120" width="60" height="60" alt="kiyoka" title="kiyoka"></a>
-
-## Sponsors
-
-Thank you to everyone sponsoring Sakutto. Your support keeps development going.
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/jammaru)
-
-<a href="https://github.com/hykw"><img src="https://github.com/hykw.png?size=120" width="60" height="60" alt="hykw" title="hykw"></a>
-
-<!-- Maintainer: add sponsor avatars below, one per line, for example:
-<a href="https://github.com/USER"><img src="https://github.com/USER.png" width="60" alt="USER"></a>
--->
 
 ## Licenses
 

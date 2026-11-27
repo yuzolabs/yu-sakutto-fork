@@ -1,9 +1,13 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { chromium, type BrowserContext, type Worker } from '@playwright/test';
+import { chromeExtensionDir } from '../scripts/extension-output.ts';
 
-const extensionPath = resolve('.output/chrome-mv3');
+// The e2e package `pnpm test:e2e` builds. Never `.output/chrome-mv3`: that is the release
+// build a browser may have loaded as an unpacked extension.
+const extensionPath = chromeExtensionDir(process.cwd(), 'fixture');
 
 const ALLOWED_REQUEST = [
   /^chrome-extension:/,
@@ -45,6 +49,14 @@ export async function launchExtension(
   profileDirectory: string,
   deleteProfile = false,
 ): Promise<LoadedExtension> {
+  // Checked here, not at module load: `tests/extension-network.test.ts` imports this file
+  // under Vitest, where no e2e package has been built.
+  if (!existsSync(join(extensionPath, 'manifest.json'))) {
+    throw new Error(
+      `No e2e extension at ${extensionPath}. Run "pnpm test:e2e" first; it builds the test package there.`,
+    );
+  }
+
   const args = [
     `--disable-extensions-except=${extensionPath}`,
     `--load-extension=${extensionPath}`,

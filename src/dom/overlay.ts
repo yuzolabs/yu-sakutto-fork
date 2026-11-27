@@ -921,11 +921,22 @@ export class PageOverlay {
     }
   }
 
-  showBar(state: { text: string; original: string; always: string; alwaysEnabled: boolean }): void {
+  showBar(state: {
+    text: string;
+    original: string;
+    always: string;
+    alwaysEnabled: boolean;
+    /** False hides the "always translate this site" control altogether. */
+    alwaysShown?: boolean;
+  }): void {
     this.barText.textContent = state.text;
     this.barOriginal.textContent = state.original;
     this.barAlways.textContent = state.always;
     this.barAlways.disabled = !state.alwaysEnabled;
+    // The bar's stylesheet gives every button a display, so `hidden` alone would not hide it.
+    const alwaysShown = state.alwaysShown !== false;
+    this.barAlways.hidden = !alwaysShown;
+    this.barAlways.style.display = alwaysShown ? '' : 'none';
     this.bar.hidden = false;
     this.bar.style.display = 'block';
     this.reservePage(true);

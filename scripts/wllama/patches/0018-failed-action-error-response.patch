@@ -1,0 +1,84 @@
+Answer a failed action with an error instead of a null pointer.
+
+When an action threw inside the wasm, wllama_action logged the reason and returned a null
+pointer without writing the length of the response. The worker read that length from the first
+four bytes of the request, where the protocol's magic number was still sitting, tried to build a
+view of 1163217991 bytes, and the RangeError went through handleError: a signal.abort that
+rejects every request the worker was running, not only the one that failed.
+
+The action now answers with the error event that the glue protocol already defines, and the main
+thread turns it into a WllamaError for that call alone; the module stays usable. The null pointer
+is kept for the case where even that answer cannot be built, and the worker then fails only the
+call that caused it.
+
+This is ngxson/wllama#343, applied to the pinned source.
+
+diff --git a/cpp/wllama.cpp b/cpp/wllama.cpp
+index b499be1..ca9daf1 100644
+--- a/cpp/wllama.cpp
++++ b/cpp/wllama.cpp
+@@ -132,7 +132,20 @@ extern "C" const char *wllama_action(const char *name, const char *req_raw)
+   catch (std::exception &e)
+   {
+     printStr(GGML_LOG_LEVEL_ERROR, e.what());
+-    return nullptr;
++    // send the error to JS, the caller throws it
++    try
++    {
++      glue_msg_error err;
++      err.message.value = e.what();
++      err.handler.serialize(output_buffer);
++      uint32_t *output_len = (uint32_t *)req_raw;
++      output_len[0] = output_buffer.data.size();
++      return output_buffer.data.data();
++    }
++    catch (std::exception &)
++    {
++      return nullptr;
++    }
+   }
+ }
+ 
+diff --git a/src/worker.ts b/src/worker.ts
+index 5f14782..45b502a 100644
+--- a/src/worker.ts
++++ b/src/worker.ts
+@@ -19,7 +19,7 @@ import {
+   createWorker,
+   isSafariMobile,
+ } from './utils';
+-import { WllamaRuntimeError } from './wllama';
++import { WllamaError, WllamaRuntimeError } from './wllama';
+ 
+ interface Logger {
+   debug: typeof console.debug;
+@@ -176,6 +176,9 @@ export class ProxyToWorker {
+       callbackId: this.taskId++,
+     });
+     const parsedResult = glueDeserialize(result);
++    if (parsedResult._name === 'erro_evt') {
++      throw new WllamaError(parsedResult.message, 'inference_error');
++    }
+     return parsedResult as T;
+   }
+ 
+diff --git a/src/workers-code/llama-cpp.js b/src/workers-code/llama-cpp.js
+index d0792b5..c1cf5c7 100644
+--- a/src/workers-code/llama-cpp.js
++++ b/src/workers-code/llama-cpp.js
+@@ -371,6 +371,15 @@ const runAction = async (data) => {
+     );
+     inputBuffer.set(argEncodedMsg, 0);
+     const outputPtr = await wllamaAction(argAction, inputPtr);
++    // A null pointer means the action threw. The reason is in the native log and the module is
++    // still usable, so only this call fails; an exception here used to abort every request.
++    if (!Number(outputPtr)) {
++      msg({
++        callbackId,
++        err: `Action "${argAction}" failed, see the native log`,
++      });
++      return;
++    }
+     // length of output buffer is written at the first 4 bytes of input buffer
+     const outputLen = new Uint32Array(
+       getHeapU8().buffer,

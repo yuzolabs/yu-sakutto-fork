@@ -67,6 +67,7 @@ function stored(overrides: Partial<Settings> = {}): Settings {
     gmailTranslateBanner: true,
     gmailAutoTranslateLangs: [],
     gmailNeverTranslateLangs: [],
+    translateXBody: false,
     ...overrides,
   };
 }
@@ -280,6 +281,17 @@ describe('settings defaults', () => {
         'en-US',
       ).videoCaptionDisplay,
     ).toBe('bilingual');
+  });
+
+  it('defaults X post translation off and keeps only an explicit true', () => {
+    const base = { schemaVersion: SETTINGS_SCHEMA_VERSION, targetLanguage: 'en' };
+    expect(DEFAULT_SETTINGS.translateXBody).toBe(false);
+    expect(normalizeSettings(base, 'en-US').translateXBody).toBe(false);
+    expect(normalizeSettings({ ...base, translateXBody: true }, 'en-US').translateXBody).toBe(true);
+    expect(normalizeSettings({ ...base, translateXBody: 'true' }, 'en-US').translateXBody).toBe(
+      false,
+    );
+    expect(normalizeSettings({ ...base, translateXBody: 1 }, 'en-US').translateXBody).toBe(false);
   });
 
   it('defaults the Gmail banner on and keeps an explicit opt-out', () => {

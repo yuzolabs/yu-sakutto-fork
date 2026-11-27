@@ -1,0 +1,30 @@
+name: 質問 / Question
+description: 使い方や設定についての質問。A question about using or configuring Sakutto.
+title: '[Question] '
+labels:
+  - question
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先に README と既存の Issue を検索してください。不具合は「不具合の報告」、要望は「機能の要望」を使ってください。
+
+        **個人情報、認証情報、ログインが必要なページの本文は貼らないでください。**
+
+        Please check the README and search existing issues first. Use the bug report form for something broken and the feature request form for a new idea. **Do not paste private page content, credentials, or personal data.**
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 質問 / Question
+      description: 何をしようとしていて、どこで困っているか。 What you are trying to do and where you are stuck.
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: ブラウザとバージョン / Browser and version
+      description: 例 / example — Chrome 131, Firefox 153, Edge 131.
+      placeholder: Chrome 131

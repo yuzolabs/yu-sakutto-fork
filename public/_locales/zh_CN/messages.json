@@ -401,6 +401,43 @@
   "sameLanguageHint": {
     "message": "本页已用目标语言编写。"
   },
+  "xBodyStop": {
+    "message": "停止 X 帖子翻译"
+  },
+  "xBodyResume": {
+    "message": "恢复 X 帖子翻译"
+  },
+  "xBodyProgress": {
+    "message": "正在翻译 X 帖子 $DONE$ / $TOTAL$",
+    "placeholders": {
+      "done": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "xBodyProgressLabel": {
+    "message": "X 帖子翻译进度"
+  },
+  "xBodyDone": {
+    "message": "屏幕上的 X 帖子已翻译。"
+  },
+  "xBodyPartial": {
+    "message": "有 $BLOCKS$ 条 X 帖子无法翻译。",
+    "placeholders": {
+      "blocks": {
+        "content": "$1"
+      }
+    }
+  },
+  "xBodyScopeHint": {
+    "message": "在 x.com 上只翻译帖子正文、社区笔记和文章，不翻译整个页面。"
+  },
+  "xBodyPausedHint": {
+    "message": "此标签页中的 X 帖子翻译已停止。Grok 的翻译仍会切换回原文。重新加载页面后会重新开始。"
+  },
   "displaySiteHint": {
     "message": "此选项将被记住。"
   },
@@ -1501,6 +1538,15 @@
   },
   "videoCaptionsPermissionDenied": {
     "message": "未获准访问 YouTube 和 X。"
+  },
+  "xBodySetting": {
+    "message": "X 帖子翻译"
+  },
+  "xBodySettingHelp": {
+    "message": "自动翻译 x.com 上不是目标语言的帖子正文、社区笔记和文章。当 X 显示 Grok 翻译且 X 以英文或日文显示时，Sakutto 会在该标签页中对每个项目点按一次 X 的“Show original”，然后翻译原文。不会更改您的 X 账户设置。开启时，Chrome 会请求访问 x.com。"
+  },
+  "xBodyPermissionDenied": {
+    "message": "未获准访问 x.com，因此 X 帖子翻译保持关闭。"
   },
   "videoCaptionsShowOriginalSetting": {
     "message": "显示原文行"
