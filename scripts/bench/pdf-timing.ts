@@ -50,4 +50,4 @@ for (let index = 1; index <= total; index += 1) {
   );
 }
 console.log(`\nmean ${(sum / total).toFixed(0)} ms/page over ${String(total)} pages`);
-await doc.destroy();
+await doc.loadingTask.destroy();

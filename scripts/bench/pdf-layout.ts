@@ -418,7 +418,7 @@ async function checkBytes(name: string, bytes: Uint8Array): Promise<void> {
       pass,
     });
   }
-  await doc.destroy();
+  await doc.loadingTask.destroy();
 }
 
 for (const file of files) {

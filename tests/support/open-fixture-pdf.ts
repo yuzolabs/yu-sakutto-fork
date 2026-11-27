@@ -4,24 +4,26 @@ import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
+/**
+ * A document opened by pdf.js, as far as the tests read it. pdf.js 6 has no
+ * `PDFDocumentProxy.destroy`; a test releases the document through `loadingTask.destroy()`.
+ */
+export interface FixturePdfDocument {
+  numPages: number;
+  getPage: (n: number) => Promise<unknown>;
+  loadingTask: { destroy: () => Promise<void> };
+}
+
 export async function loadPdfjs(): Promise<{
   getDocument: (params: Record<string, unknown>) => {
-    promise: Promise<{
-      numPages: number;
-      getPage: (n: number) => Promise<unknown>;
-      destroy: () => Promise<void>;
-    }>;
+    promise: Promise<FixturePdfDocument>;
   };
   OPS: Record<string, number>;
 }> {
   const pdfjsPath = require.resolve('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = (await import(pathToFileURL(pdfjsPath).href)) as {
     getDocument: (params: Record<string, unknown>) => {
-      promise: Promise<{
-        numPages: number;
-        getPage: (n: number) => Promise<unknown>;
-        destroy: () => Promise<void>;
-      }>;
+      promise: Promise<FixturePdfDocument>;
     };
     OPS: Record<string, number>;
   };
@@ -33,11 +35,7 @@ export function standardFontDataUrl(): string {
   return pathToFileURL(resolve(dirname(pdfjsPath), '..', '..', 'standard_fonts') + '/').href;
 }
 
-export async function openPdfBytes(bytes: Uint8Array): Promise<{
-  numPages: number;
-  getPage: (n: number) => Promise<unknown>;
-  destroy: () => Promise<void>;
-}> {
+export async function openPdfBytes(bytes: Uint8Array): Promise<FixturePdfDocument> {
   const pdfjs = await loadPdfjs();
   return pdfjs.getDocument({
     data: bytes,

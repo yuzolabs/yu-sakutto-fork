@@ -65,7 +65,11 @@ export interface PdfDocument {
   numPages: number;
   getPage: (index: number) => Promise<PdfPage>;
   getMetadata: () => Promise<{ info?: unknown } | null>;
-  destroy: () => Promise<void>;
+  /**
+   * The task that opened the document. Destroying it is how the document is released: pdf.js 6
+   * removed `PDFDocumentProxy.destroy`, which was only an alias for this.
+   */
+  loadingTask: { destroy: () => Promise<void> };
 }
 
 /**

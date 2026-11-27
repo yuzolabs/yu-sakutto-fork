@@ -88,7 +88,7 @@ function fakeDocument(
       return fakePage(renders);
     },
     getMetadata: async () => null,
-    destroy: async () => undefined,
+    loadingTask: { destroy: async () => undefined },
   };
 }
 
@@ -417,7 +417,7 @@ describe('PdfReader viewport observer', () => {
       numPages: 1,
       getPage: async () => page,
       getMetadata: async () => null,
-      destroy: async () => undefined,
+      loadingTask: { destroy: async () => undefined },
     };
 
     const reader = new PdfReader(root, geometries(1), {
@@ -495,7 +495,7 @@ describe('PdfReader viewport observer', () => {
       numPages: 1,
       getPage: async () => page,
       getMetadata: async () => null,
-      destroy: async () => undefined,
+      loadingTask: { destroy: async () => undefined },
     };
 
     const root = document.createElement('div');
@@ -590,7 +590,7 @@ describe('PdfReader viewport observer', () => {
       numPages: pages,
       getPage: async (number) => hungPage(number - 1),
       getMetadata: async () => null,
-      destroy: async () => undefined,
+      loadingTask: { destroy: async () => undefined },
     };
 
     const root = document.createElement('div');
@@ -677,7 +677,7 @@ describe('PdfReader viewport observer', () => {
       numPages: pages,
       getPage: async (number) => hungPage(number - 1),
       getMetadata: async () => null,
-      destroy: async () => undefined,
+      loadingTask: { destroy: async () => undefined },
     };
 
     const root = document.createElement('div');
@@ -820,5 +820,43 @@ describe('PdfReader viewport observer', () => {
     expect(original.width).toBe(0);
 
     reader.destroy();
+  });
+});
+
+describe('PdfReader teardown', () => {
+  afterEach(() => {
+    observerRecords.length = 0;
+    resizeCallback = null;
+    vi.unstubAllGlobals();
+    document.head.replaceChildren();
+    document.body.replaceChildren();
+  });
+
+  it('releases the document through its loading task, which pdf.js 6 requires', () => {
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    const root = document.createElement('div');
+    document.body.append(root);
+
+    // pdf.js 6 documents have no `destroy` of their own; calling one throws a TypeError.
+    const release = vi.fn(async () => undefined);
+    const document_: PdfDocument = {
+      numPages: 1,
+      getPage: async () => fakePage({ count: 0 }),
+      getMetadata: async () => null,
+      loadingTask: { destroy: release },
+    };
+    const reader = new PdfReader(root, geometries(1), {
+      document: document_,
+      engine: silentEngine,
+      labels,
+      targetLanguage: 'ja',
+      form: 'plain',
+      onProgress: () => undefined,
+    });
+
+    expect(() => reader.destroy()).not.toThrow();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(root.childElementCount).toBe(0);
   });
 });
