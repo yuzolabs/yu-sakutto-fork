@@ -418,6 +418,47 @@ describe('a stopped wllama runtime', () => {
     expect(native.tokenize).toHaveBeenCalledOnce();
   });
 
+  it('runs a lone request with nothing beside it and says when it starts', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), gpu);
+    let finishFirst!: () => void;
+    native.createCompletion
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+
+    const first = runtime.complete(completion());
+    await vi.waitFor(() => expect(native.createCompletion).toHaveBeenCalledOnce());
+    const onStart = vi.fn();
+    const alone = runtime.complete({ ...completion(), alone: true, onStart });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onStart).not.toHaveBeenCalled();
+    expect(native.createCompletion).toHaveBeenCalledOnce();
+
+    finishFirst();
+    await first;
+    await alone;
+    expect(onStart).toHaveBeenCalledOnce();
+    expect(native.createCompletion).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not say a request started when the stopped runtime turned it away', async () => {
+    const runtime = await createWllamaRuntime(new Blob(), cpu);
+    native.createCompletion.mockRejectedValueOnce(exception());
+    await expect(runtime.complete(completion())).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+
+    const onStart = vi.fn();
+    await expect(runtime.complete({ ...completion(), onStart })).rejects.toMatchObject({
+      code: 'runtime-crashed',
+    });
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
   it('ends a request still running when the runtime is disposed', async () => {
     const runtime = await createWllamaRuntime(new Blob(), gpu);
     native.createCompletion.mockImplementationOnce(() => new Promise<void>(() => undefined));

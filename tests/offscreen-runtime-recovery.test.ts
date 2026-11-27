@@ -36,6 +36,8 @@ const native = vi.hoisted(() => ({
   instances: [] as FakeWllamaInstance[],
   /** One entry per upcoming completion, in order. With none left, a completion answers normally. */
   steps: [] as CompletionStep[],
+  /** A prompt this matches crashes the worker every time, like a paragraph that trips a bug. */
+  crashOn: null as ((prompt: string) => boolean) | null,
 }));
 
 vi.mock('@/engine/wllama', () => ({
@@ -58,6 +60,12 @@ vi.mock('@/engine/wllama', () => ({
         if (step) {
           await step(params, instance);
           return;
+        }
+        if (native.crashOn?.(params.prompt)) {
+          instance.wedged = true;
+          const error = new Error('Invalid typed array length: 1163217991');
+          error.name = 'RuntimeError';
+          throw error;
         }
         params.onData?.({ choices: [{ text: 'こんにちは', finish_reason: 'stop' }] });
       }),
@@ -218,6 +226,7 @@ const WASM_ABORT = '(ABORT) Aborted()';
 beforeEach(() => {
   native.instances.length = 0;
   native.steps.length = 0;
+  native.crashOn = null;
 });
 
 describe('offscreen host after a lost GPU', () => {
@@ -349,5 +358,34 @@ describe('offscreen host after the runtime crashed', () => {
     expect(first).toBe('こんにちは');
     expect(second.at(-1)).toMatchObject({ id: 'b', final: 'こんにちは' });
     expect(loadedSlots()).toEqual([16, 16]);
+  });
+});
+
+describe('offscreen host with a paragraph that keeps crashing the runtime', () => {
+  const poison = { id: 'p', text: 'A POISON paragraph.' };
+
+  it('leaves that paragraph untranslated and stays on WebGPU', async () => {
+    const { host, services } = await openServices();
+    native.crashOn = (prompt) => prompt.includes('POISON');
+
+    const [hello, poisoned, bye] = await Promise.all([
+      translateHello(services),
+      collectChunks(services.lazy.translate([poison], options())),
+      collectChunks(services.lazy.translate([{ id: 'b', text: 'Bye.' }], options())),
+    ]);
+
+    expect(hello).toBe('こんにちは');
+    expect(bye.at(-1)).toMatchObject({ id: 'b', final: 'こんにちは' });
+    expect(poisoned.at(-1)).toEqual({ id: 'p', final: poison.text, engine: 'plamo', error: true });
+    // Once with whatever else was running, once alone; then the paragraph is not sent again.
+    expect(loadedSlots()).toEqual([16, 16, 16]);
+    const status = await host.status();
+    expect(status).toMatchObject({ backend: 'webgpu', parallel: 16, gpuFallback: false });
+
+    const completions = native.instances.at(-1)?.completions;
+    const again = await collectChunks(services.lazy.translate([poison], options()));
+    expect(again.at(-1)).toMatchObject({ id: 'p', error: true });
+    expect(loadedSlots()).toEqual([16, 16, 16]);
+    expect(native.instances.at(-1)?.completions).toBe(completions);
   });
 });

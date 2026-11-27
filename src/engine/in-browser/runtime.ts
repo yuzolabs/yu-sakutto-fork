@@ -11,6 +11,16 @@ export interface CompletionRequest {
   maxTokens: number;
   signal: AbortSignal;
   onToken: (text: string) => void;
+  /**
+   * Run with no other completion beside it on this runtime, so a crash while it runs can only
+   * be its own. Runtimes that run one completion at a time already do.
+   */
+  alone?: boolean;
+  /**
+   * Called once the completion has its slot on a running runtime, just before it reaches the
+   * model. A request that fails without it never ran, so a crash it fails with is not its own.
+   */
+  onStart?: () => void;
 }
 
 /** Present when the runtime can tell how generation stopped. */
@@ -41,39 +51,62 @@ export type RuntimeFactory = (file: Blob, selection: BackendSelection) => Promis
  * A cancelled completion is left to finish. Aborting the WASM call wedges the
  * pthread, so the slot stays busy until that generation ends and then opens
  * for the next request. Width matches `n_parallel`.
+ *
+ * A task that asks to run `alone` waits until every running task has finished and keeps the
+ * others waiting while it runs. Waiting tasks start in the order they asked, so later tasks do
+ * not overtake one that waits to run alone.
  */
 export class CompletionGate {
   private active = 0;
-  private readonly waiters: Array<() => void> = [];
+  private aloneActive = false;
+  private readonly waiters: Array<{ alone: boolean; start: () => void }> = [];
 
   constructor(private readonly limit = 1) {}
 
-  async exclusive(task: () => Promise<void>): Promise<void> {
-    await this.acquire();
+  async exclusive(task: () => Promise<void>, alone = false): Promise<void> {
+    await this.acquire(alone);
     try {
       await task();
     } finally {
-      this.release();
+      this.release(alone);
     }
   }
 
-  private acquire(): Promise<void> {
-    if (this.active < Math.max(1, this.limit)) {
-      this.active += 1;
+  private canStart(alone: boolean): boolean {
+    if (this.aloneActive) return false;
+    return alone ? this.active === 0 : this.active < Math.max(1, this.limit);
+  }
+
+  private begin(alone: boolean): void {
+    this.active += 1;
+    if (alone) this.aloneActive = true;
+  }
+
+  private acquire(alone: boolean): Promise<void> {
+    if (this.waiters.length === 0 && this.canStart(alone)) {
+      this.begin(alone);
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      this.waiters.push(() => {
-        this.active += 1;
-        resolve();
+      this.waiters.push({
+        alone,
+        start: () => {
+          this.begin(alone);
+          resolve();
+        },
       });
     });
   }
 
-  private release(): void {
+  private release(alone: boolean): void {
     this.active = Math.max(0, this.active - 1);
-    const next = this.waiters.shift();
-    if (next) next();
+    if (alone) this.aloneActive = false;
+    for (;;) {
+      const next = this.waiters[0];
+      if (!next || !this.canStart(next.alone)) return;
+      this.waiters.shift();
+      next.start();
+    }
   }
 }
 
@@ -423,6 +456,7 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
       await gate.exclusive(async () => {
         if (request.signal.aborted) throw abortError();
         if (stopCause) throw stoppedError(stopCause.error);
+        request.onStart?.();
         try {
           let emitted = 0;
           let finishReason: string | null = null;
@@ -459,7 +493,7 @@ export const createWllamaRuntime: RuntimeFactory = async (file, selection) => {
             cause: error,
           });
         }
-      });
+      }, request.alone === true);
       return { hitMaxTokens };
     },
     async dispose(): Promise<void> {

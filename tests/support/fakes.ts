@@ -151,6 +151,7 @@ export class FakeRuntime implements LlamaRuntime {
 
   async complete(request: CompletionRequest): Promise<CompletionResult | void> {
     this.requests.push(request);
+    request.onStart?.();
     const output = this.handler(request.prompt);
     let emitted = 0;
     for (const character of output) {
