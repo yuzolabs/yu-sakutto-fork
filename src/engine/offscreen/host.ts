@@ -44,10 +44,10 @@ import {
   modelChangedError,
 } from '../errors';
 import {
+  GpuLossHistory,
   cpuFallback,
   isGpuLoadFallback,
   lighterSelection,
-  selectionAfterGpuLoss,
   selectionForTier,
   type BackendSelection,
 } from '../in-browser/backend';
@@ -598,7 +598,7 @@ export class EngineHost {
       this.touch();
       return result.loaded;
     };
-    let lastGpuLossAt = Number.NEGATIVE_INFINITY;
+    const gpuLosses = new GpuLossHistory();
     const cpuRetry = new CpuRetryRuntimeSlot({
       create: createWllamaRuntime,
       modelBlob: (modelId) => manager.modelBlob(modelId),
@@ -629,9 +629,7 @@ export class EngineHost {
         await manager.unload();
         return;
       }
-      const now = Date.now();
-      const next = selectionAfterGpuLoss(selectionState.current, now - lastGpuLossAt);
-      lastGpuLossAt = now;
+      const next = gpuLosses.recordLoss(selectionState.current);
       if (next !== selectionState.current) {
         if (isGpuLoadFallback(selectionState.current, next)) {
           this.markGpuFallback('device');
@@ -688,6 +686,8 @@ export class EngineHost {
       clearCache: () => cache.clear(),
       setTier: async (tier: TierPreference) => {
         selectionState.current = selectionForTier(tier, probe);
+        // A loss on the previous tier must not make the first loss on this one step down.
+        gpuLosses.forgetLosses();
         this.gpuFallback = false;
         this.gpuFallbackReason = null;
         this.gpuDiagnostic = mergeGpuDiagnostic(lastGpuDiagnostic(), null);

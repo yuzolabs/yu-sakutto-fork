@@ -239,3 +239,26 @@ export function selectionAfterGpuLoss(
   if (sinceLastLossMs >= GPU_LOSS_WINDOW_MS) return selection;
   return lighterSelection(selection) ?? selection;
 }
+
+/**
+ * Remembers when the GPU was last lost, so a second GPU loss within `GPU_LOSS_WINDOW_MS` picks a
+ * lighter selection. Choosing a tier again forgets earlier losses: the first loss after it
+ * reloads the chosen tier as it is instead of stepping down at once.
+ */
+export class GpuLossHistory {
+  private lastLossAt = Number.NEGATIVE_INFINITY;
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  /** Records a GPU loss now and returns where the model loads next. */
+  recordLoss(selection: BackendSelection): BackendSelection {
+    const now = this.now();
+    const next = selectionAfterGpuLoss(selection, now - this.lastLossAt);
+    this.lastLossAt = now;
+    return next;
+  }
+
+  forgetLosses(): void {
+    this.lastLossAt = Number.NEGATIVE_INFINITY;
+  }
+}
