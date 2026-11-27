@@ -46,7 +46,10 @@ export default defineConfig({
       short_name: '__MSG_extensionShortName__',
       description: '__MSG_extensionDescription__',
       default_locale: 'en',
-      ...(firefox ? {} : { minimum_chrome_version: '116' }),
+      // pdf.js 6's legacy build, which the PDF reader ships, is transpiled for Chrome 125 and
+      // later. A pdfjs-dist upgrade can raise that floor: compare `ENV_TARGETS` in pdf.js's
+      // gulpfile.mjs for the new version with this value.
+      ...(firefox ? {} : { minimum_chrome_version: '125' }),
       permissions: [...(firefox ? FIREFOX_PERMISSIONS : CHROME_PERMISSIONS)],
       optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
       // Release builds ask for no install-time host access. Mail banners, like YouTube

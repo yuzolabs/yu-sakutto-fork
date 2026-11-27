@@ -72,8 +72,8 @@ describe('extension manifest', () => {
     }
   });
 
-  it('sets a minimum Chrome version that supports offscreen documents', () => {
-    expect(chromeManifest.minimum_chrome_version).toBe('116');
+  it('sets a minimum Chrome version that supports offscreen documents and packaged pdf.js', () => {
+    expect(chromeManifest.minimum_chrome_version).toBe('125');
   });
 
   it('locks the Chrome extension pages down to bundled scripts and wasm', () => {

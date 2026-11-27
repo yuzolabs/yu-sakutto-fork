@@ -9,7 +9,7 @@ const packagedPath = resolve(root, 'public/vendor/pdfjs/build/pdf.min.mjs');
 const describePackaged = existsSync(packagedPath) ? describe : describe.skip;
 
 describePackaged('packaged pdf.js', () => {
-  it('ships the legacy build so Chrome 116 can open a PDF', () => {
+  it('ships the legacy build so Chrome 125 can open a PDF', () => {
     const manifest = JSON.parse(
       readFileSync(resolve(root, 'public/vendor/pdfjs/pdfjs-build.json'), 'utf8'),
     ) as { source: string; files: Record<string, { sha256: string }> };

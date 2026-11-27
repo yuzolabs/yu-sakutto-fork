@@ -5,8 +5,9 @@
  * resolves its worker, its CMaps and its standard fonts relative to its own URL. An import
  * through the bundler would move the module into `chunks/` and every one of those lookups
  * would then point at a directory that does not exist. The packaged files are the *legacy*
- * build: the modern one needs `Promise.withResolvers` (Chrome 119+), and the manifest still
- * supports Chrome 116.
+ * build: the modern one of pdf.js 6 calls recent built-ins such as
+ * `Map.prototype.getOrInsertComputed` and `Math.sumPrecise` directly, while the legacy one
+ * polyfills them and is transpiled for Chrome 125, the manifest's minimum.
  */
 export const PDFJS_ASSET_DIRECTORY = 'vendor/pdfjs';
 
