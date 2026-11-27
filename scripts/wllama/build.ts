@@ -117,6 +117,10 @@ const PATCH_MARKERS: ReadonlyArray<readonly [string, string]> = [
   ['cpp/wllama.cpp', 'glue_msg_error err;'],
   ['src/worker.ts', "if (parsedResult._name === 'erro_evt') {"],
   ['src/workers-code/llama-cpp.js', 'if (!Number(outputPtr)) {'],
+  // tests/wllama-build.test.ts runs a copy of this worker code; these lines make wllama:check
+  // fail when a pin bump changes it.
+  ['src/workers-code/llama-cpp.js', 'wasmCallQueue.length = 0;'],
+  ['src/workers-code/llama-cpp.js', "args: ['exception', message, stack, err],"],
 ];
 
 /**
