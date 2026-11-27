@@ -802,7 +802,9 @@ protocol's magic number `0x45554C47` (1163217991) still sat, and tried to build 
 thread rejected every queued and waiting task with `WllamaRuntimeError` (`RuntimeError`). With
 sixteen requests streaming, one bad request failed all sixteen, and `isRuntimeDead` in
 `src/engine/in-browser/runtime.ts` reads that `RuntimeError` as a dead runtime and reports a lost
-GPU, moving the model to the CPU.
+GPU; Sakutto then unloads and reloads the model, and a second loss within 120 s
+(`selectionAfterGpuLoss` in `src/engine/in-browser/backend.ts`) moves it to a lighter selection
+(four WebGPU slots, then one, then the CPU).
 
 ### What the patch changes
 
@@ -820,11 +822,20 @@ request in its `finally` to release its slot, the other requests keep streaming,
 stays on WebGPU. No Sakutto source changed: `isRuntimeDead` already treats a typed `WllamaError`
 as a live runtime and only a string or a `RuntimeError` as dead.
 
+In the rare fallback where even `erro_evt` cannot be built and `wllama_action` returns a null
+pointer, the worker posts `err` as a plain string for that call alone. The main thread rejects
+that call with the string, and Sakutto still reads it as a lost GPU, as every action failure was
+read before the patch.
+
 `tests/wllama-build.test.ts` checks the patch content and runs the pinned worker call queue and
 action runner against a fake wasm: unpatched, a null pointer posts `signal.abort` with
 `RangeError: Invalid typed array length: 1163217991`; with the `0018` hunk applied via
 `git apply`, the same call posts `err` for its own callback id only and the next queued call
-completes. `scripts/wllama/build.ts` checks a marker line of each new hunk after applying patches.
+completes. `scripts/wllama/build.ts` checks a marker line of each new hunk after applying patches,
+along with two `PATCH_MARKERS` entries for `src/workers-code/llama-cpp.js`
+(`wasmCallQueue.length = 0;` in `runWasmCall`'s `finally` and
+`args: ['exception', message, stack, err],` in `handleError`) so `pnpm wllama:check` fails when a
+pin bump changes the worker code that `tests/wllama-build.test.ts` copies verbatim.
 
 ### Measurements (2026-11-27)
 
