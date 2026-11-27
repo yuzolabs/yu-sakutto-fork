@@ -24,8 +24,9 @@ const target = join(root, 'public', 'vendor', 'pdfjs');
 
 /**
  * Files the reader loads directly. The minified *legacy* builds are used: the modern build
- * of pdf.js 4.10.38 calls `Promise.withResolvers`, which Chrome only has from 119, while the
- * packaged manifest still supports 116. The destination path stays `build/` so the reader's
+ * of pdf.js 6 calls recent built-ins such as `Map.prototype.getOrInsertComputed` directly,
+ * while the legacy build polyfills them and is transpiled for Chrome 125, the packaged
+ * manifest's minimum. The destination path stays `build/` so the reader's
  * URLs do not change. Source maps are skipped: a map is not loaded at runtime and the
  * release package refuses them.
  */

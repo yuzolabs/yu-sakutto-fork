@@ -106,7 +106,7 @@ if (asJson) {
   console.log(
     JSON.stringify({ bodySize: layout.bodySize, lineHeight: layout.lineHeight, rows }, null, 2),
   );
-  await doc.destroy();
+  await doc.loadingTask.destroy();
   process.exit(0);
 }
 
@@ -161,4 +161,4 @@ if (dropped.length > 0) {
   }
 }
 
-await doc.destroy();
+await doc.loadingTask.destroy();
