@@ -247,8 +247,13 @@ export function selectionAfterGpuLoss(
  */
 export class GpuLossHistory {
   private lastLossAt = Number.NEGATIVE_INFINITY;
+  private readonly now: () => number;
 
-  constructor(private readonly now: () => number = Date.now) {}
+  // A plain field instead of a parameter property: `scripts/bench/translation-equality.ts` loads
+  // this file with Node's type stripping, which does not accept parameter properties.
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
 
   /** Records a GPU loss now and returns where the model loads next. */
   recordLoss(selection: BackendSelection): BackendSelection {
