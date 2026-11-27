@@ -824,8 +824,9 @@ as a live runtime and only a string or a `RuntimeError` as dead.
 
 In the rare fallback where even `erro_evt` cannot be built and `wllama_action` returns a null
 pointer, the worker posts `err` as a plain string for that call alone. The main thread rejects
-that call with the string, and Sakutto still reads it as a lost GPU, as every action failure was
-read before the patch.
+that call with the string, and Sakutto reads it as a lost GPU only on WebGPU, where the other
+running requests then fail and the model unloads and reloads as before the patch. On the CPU, only
+that request fails.
 
 `tests/wllama-build.test.ts` checks the patch content and runs the pinned worker call queue and
 action runner against a fake wasm: unpatched, a null pointer posts `signal.abort` with
